@@ -89,6 +89,9 @@
         }
       },
       "tick": { "name": "Tick" }
+    },
+    "switch": {
+      "onboard_scheduler": { "name": "Onboard scheduler" }
     }
   }
 }
