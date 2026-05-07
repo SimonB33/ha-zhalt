@@ -1,21 +1,23 @@
 """WebSocket coordinator for the Zhalt Evolution Connect integration.
 
-State machine (per spec section 4.2 / Phase 3):
-  DISCONNECTED -> CONNECTING -> HANDSHAKING -> CONNECTED
-  any failure  -> RECONNECTING (backoff 2,4,8,16,32,60,60,60s)
+On-demand session model:
+- The coordinator stays disconnected by default to spare the device.
+- An action (mist, stop, settings change, refresh) opens a session: handshake +
+  P_dat keepalive at 1.5s. Each action sets/extends an "active until" deadline.
+- When the deadline passes the session closes cleanly.
+- Sensors keep showing the last observed value when no session is active;
+  binary_sensor.zhalt_connected is the freshness indicator.
 
-Two cooperative tasks once connected:
-  - receive loop:   reads frames, dispatches G_imp/G_dat parses
-  - keepalive loop: sends P_dat every 1.5s (carrying any pending action)
-
-Pending actions (mist/stop/etc) are coalesced into the next P_dat to avoid
-racing the keepalive task.
+State machine inside a session:
+  DISCONNECTED -> CONNECTING -> HANDSHAKING -> CONNECTED -> (timer or error)
+                                                          -> DISCONNECTED
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+import time
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -27,15 +29,22 @@ from homeassistant.util import dt as dt_util
 
 from . import protocol
 from .const import (
+    ACTION_HOLD_DEFAULT_S,
+    ACTION_HOLD_S,
     CLOCK_DRIFT_WARN_S,
     DAT_STALE_AFTER_S,
     DOMAIN,
     HANDSHAKE_TIMEOUT_S,
+    HEALTHCHECK_HOLD_S,
+    HEALTHCHECK_INTERVAL_S,
+    HEALTHCHECK_WINDOW_HOURS,
     POLL_INTERVAL_S,
     RECONNECT_BACKOFF_S,
+    REFRESH_HOLD_S,
+    SETTINGS_HOLD_S,
+    STARTUP_HOLD_S,
     STORAGE_KEY,
     STORAGE_VERSION,
-    WS_RECV_TIMEOUT_S,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -46,11 +55,10 @@ class ConnState(str, Enum):
     CONNECTING = "connecting"
     HANDSHAKING = "handshaking"
     CONNECTED = "connected"
-    RECONNECTING = "reconnecting"
 
 
 class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
-    """Manages the WebSocket connection and exposes parsed state to entities."""
+    """Manages on-demand WebSocket sessions and exposes parsed state to entities."""
 
     def __init__(self, hass: HomeAssistant, *, host: str, port: int) -> None:
         super().__init__(
@@ -68,15 +76,16 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
         self.last_dat_at: datetime | None = None
 
         self._ws: Any | None = None
-        self._connection_task: asyncio.Task[None] | None = None
-        self._recv_task: asyncio.Task[None] | None = None
-        self._keepalive_task: asyncio.Task[None] | None = None
+        self._session_task: asyncio.Task[None] | None = None
+        self._auto_stop_task: asyncio.Task[None] | None = None
+        self._healthcheck_task: asyncio.Task[None] | None = None
         self._stopped = asyncio.Event()
         self._pending_actions: dict[str, int] = {}
-        self._auto_stop_task: asyncio.Task[None] | None = None
         self._cached_original_settings: dict[str, Any] | None = None
         self._store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self._got_initial_g_imp = asyncio.Event()
+        self._connected_event = asyncio.Event()
+        self._active_until_mono: float = 0.0
 
     # ---- public properties ---------------------------------------------------
 
@@ -96,24 +105,24 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
     # ---- lifecycle -----------------------------------------------------------
 
     async def async_start(self) -> None:
-        """Load cached settings and kick off the connection task."""
+        """Load cached settings and run a brief startup session to fetch G_imp."""
         cached = await self._store.async_load()
         if isinstance(cached, dict) and cached.get("cycles"):
             self._cached_original_settings = cached
             _LOGGER.debug("loaded cached original settings from store")
-        self._connection_task = self.hass.async_create_background_task(
-            self._connection_loop(), name=f"{DOMAIN}_connection"
-        )
-        # Wait briefly for first G_imp so config_flow / setup can fail fast on
-        # bad connection details, but don't block setup forever.
+        # Best-effort startup session; don't block setup if device is offline.
         try:
-            await asyncio.wait_for(self._got_initial_g_imp.wait(), timeout=HANDSHAKE_TIMEOUT_S * 2)
-        except asyncio.TimeoutError:
-            _LOGGER.warning("no G_imp received within startup window; continuing in background")
+            await self._ensure_session(STARTUP_HOLD_S, wait_for_g_imp=True)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("startup session failed: %s (will retry on first action)", err)
+        # Background periodic health check during typical-use hours.
+        self._healthcheck_task = self.hass.async_create_background_task(
+            self._healthcheck_loop(), name=f"{DOMAIN}_healthcheck"
+        )
 
     async def async_shutdown(self) -> None:
         self._stopped.set()
-        for task in (self._auto_stop_task, self._keepalive_task, self._recv_task, self._connection_task):
+        for task in (self._auto_stop_task, self._healthcheck_task, self._session_task):
             if task and not task.done():
                 task.cancel()
         if self._ws is not None:
@@ -126,9 +135,11 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
     # ---- public API used by entities / services -----------------------------
 
     async def fire_action(self, name: str) -> None:
-        """Queue a single P_dat action flag for the next keepalive send."""
+        """Open a session if needed and queue a P_dat action flag."""
         if name not in protocol.P_DAT_ACTION_KEYS:
             raise ValueError(f"unknown action {name!r}")
+        hold = ACTION_HOLD_S.get(name, ACTION_HOLD_DEFAULT_S)
+        await self._ensure_session(hold)
         self._pending_actions[name] = 1
 
     async def fire_mist_with_duration(self, seconds: int) -> None:
@@ -139,7 +150,8 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
         if self._auto_stop_task and not self._auto_stop_task.done():
             _LOGGER.warning("auto-stop timer already running; ignoring duplicate mist")
             return
-        await self.fire_action("mist_send")
+        await self._ensure_session(seconds + 5.0)
+        self._pending_actions["mist_send"] = 1
         self._auto_stop_task = self.hass.async_create_task(self._auto_stop(seconds))
 
     async def _auto_stop(self, seconds: int) -> None:
@@ -151,12 +163,15 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
 
     async def write_settings(self, new_settings: dict[str, Any]) -> None:
         """Send a B-form P_imp with the given settings; refreshes self.settings on echo."""
+        await self._ensure_session(SETTINGS_HOLD_S)
         if self._ws is None or self.conn_state != ConnState.CONNECTED:
             raise RuntimeError("not connected")
         frame = protocol.build_p_imp_settings(new_settings, datetime.now())
         await self._ws.send(frame)
 
     async def disable_all_cycles(self) -> None:
+        if not self.settings:
+            await self._ensure_session(STARTUP_HOLD_S, wait_for_g_imp=True)
         if not self.settings:
             raise RuntimeError("no settings observed yet")
         await self.write_settings(protocol.disable_all_cycles(self.settings))
@@ -167,57 +182,132 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
         await self.write_settings(self._cached_original_settings)
 
     async def refresh_settings(self) -> None:
-        """Re-handshake to force a fresh G_imp."""
+        """Open a session and re-handshake to force a fresh G_imp."""
+        await self._ensure_session(REFRESH_HOLD_S)
         if self._ws is None:
-            return
+            raise RuntimeError("not connected")
         await self._ws.send(protocol.build_p_imp_handshake(datetime.now()))
 
-    # ---- connection loop -----------------------------------------------------
+    # ---- session management -------------------------------------------------
 
-    async def _connection_loop(self) -> None:
+    async def _ensure_session(
+        self, hold_seconds: float, *, wait_for_g_imp: bool = False
+    ) -> None:
+        """Open a session if needed, extending the active deadline."""
+        deadline = time.monotonic() + hold_seconds
+        if deadline > self._active_until_mono:
+            self._active_until_mono = deadline
+
+        if self._session_task is None or self._session_task.done():
+            self._connected_event.clear()
+            if wait_for_g_imp:
+                self._got_initial_g_imp.clear()
+            self._session_task = self.hass.async_create_background_task(
+                self._session_loop(), name=f"{DOMAIN}_session"
+            )
+
+        try:
+            await asyncio.wait_for(
+                self._connected_event.wait(), timeout=HANDSHAKE_TIMEOUT_S * 2
+            )
+        except asyncio.TimeoutError as err:
+            raise RuntimeError("session failed to establish") from err
+
+        if wait_for_g_imp:
+            try:
+                await asyncio.wait_for(
+                    self._got_initial_g_imp.wait(), timeout=HANDSHAKE_TIMEOUT_S
+                )
+            except asyncio.TimeoutError:
+                _LOGGER.warning(
+                    "no G_imp received within %.0fs of session start", HANDSHAKE_TIMEOUT_S
+                )
+
+    async def _session_loop(self) -> None:
+        """One on-demand session: connect, handshake, run until deadline expires."""
         attempt = 0
+        try:
+            while not self._stopped.is_set():
+                try:
+                    self.conn_state = ConnState.CONNECTING
+                    _LOGGER.debug("opening session to %s", self.url)
+                    async with websockets.connect(
+                        self.url, open_timeout=HANDSHAKE_TIMEOUT_S
+                    ) as ws:
+                        self._ws = ws
+                        await self._handshake(ws)
+                        self.conn_state = ConnState.CONNECTED
+                        attempt = 0
+                        self._connected_event.set()
+                        recv_task = asyncio.create_task(self._recv_loop(ws))
+                        ka_task = asyncio.create_task(self._keepalive_loop(ws))
+                        timer_task = asyncio.create_task(self._session_timer())
+                        done, pending = await asyncio.wait(
+                            {recv_task, ka_task, timer_task},
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                        for t in pending:
+                            t.cancel()
+                        if timer_task in done:
+                            _LOGGER.debug("session deadline reached; closing cleanly")
+                            return
+                        for t in done:
+                            exc = t.exception()
+                            if exc:
+                                raise exc
+                except asyncio.CancelledError:
+                    raise
+                except (OSError, websockets.WebSocketException, asyncio.TimeoutError) as e:
+                    _LOGGER.warning("session error: %s", e)
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("unexpected error in session loop")
+                finally:
+                    self._ws = None
+                    self.conn_state = ConnState.DISCONNECTED
+                    self.async_set_updated_data(self.data)
+
+                if self._stopped.is_set():
+                    return
+                if time.monotonic() >= self._active_until_mono:
+                    return
+                delay = RECONNECT_BACKOFF_S[min(attempt, len(RECONNECT_BACKOFF_S) - 1)]
+                attempt += 1
+                try:
+                    await asyncio.wait_for(self._stopped.wait(), timeout=delay)
+                except asyncio.TimeoutError:
+                    pass
+        finally:
+            self.conn_state = ConnState.DISCONNECTED
+            self._connected_event.clear()
+            self.async_set_updated_data(self.data)
+
+    async def _healthcheck_loop(self) -> None:
+        """Brief refresh session every HEALTHCHECK_INTERVAL_S during the active window."""
+        start_h, end_h = HEALTHCHECK_WINDOW_HOURS
         while not self._stopped.is_set():
             try:
-                self.conn_state = ConnState.CONNECTING
-                _LOGGER.debug("connecting to %s", self.url)
-                async with websockets.connect(self.url, open_timeout=HANDSHAKE_TIMEOUT_S) as ws:
-                    self._ws = ws
-                    await self._handshake(ws)
-                    self.conn_state = ConnState.CONNECTED
-                    attempt = 0
-                    self._recv_task = asyncio.create_task(self._recv_loop(ws))
-                    self._keepalive_task = asyncio.create_task(self._keepalive_loop(ws))
-                    done, pending = await asyncio.wait(
-                        {self._recv_task, self._keepalive_task},
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-                    for t in pending:
-                        t.cancel()
-                    for t in done:
-                        exc = t.exception()
-                        if exc:
-                            raise exc
-            except asyncio.CancelledError:
-                raise
-            except (OSError, websockets.WebSocketException, asyncio.TimeoutError) as e:
-                _LOGGER.warning("connection error: %s", e)
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("unexpected error in connection loop")
-            finally:
-                self._ws = None
-                if self.conn_state != ConnState.DISCONNECTED:
-                    self.conn_state = ConnState.RECONNECTING
-                # Wake any sensor that's checking connected state.
-                self.async_set_updated_data(self.data)
-
-            if self._stopped.is_set():
-                break
-            delay = RECONNECT_BACKOFF_S[min(attempt, len(RECONNECT_BACKOFF_S) - 1)]
-            attempt += 1
-            try:
-                await asyncio.wait_for(self._stopped.wait(), timeout=delay)
+                await asyncio.wait_for(
+                    self._stopped.wait(), timeout=HEALTHCHECK_INTERVAL_S
+                )
+                return
             except asyncio.TimeoutError:
                 pass
+            now_local = dt_util.now()
+            if not (start_h <= now_local.hour < end_h):
+                continue
+            try:
+                await self._ensure_session(HEALTHCHECK_HOLD_S)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("healthcheck session skipped: %s", err)
+
+    async def _session_timer(self) -> None:
+        """Resolves when the active deadline passes, allowing the session to close."""
+        while True:
+            now = time.monotonic()
+            remaining = self._active_until_mono - now
+            if remaining <= 0:
+                return
+            await asyncio.sleep(remaining)
 
     async def _handshake(self, ws: Any) -> None:
         self.conn_state = ConnState.HANDSHAKING
@@ -254,8 +344,6 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
             return
         self.settings = parsed
         self._got_initial_g_imp.set()
-        # Cache the first observed settings that have at least one cycle enabled
-        # so the master switch can restore them later.
         if self._cached_original_settings is None and any(
             c.get("act") for c in parsed["cycles"].values()
         ):

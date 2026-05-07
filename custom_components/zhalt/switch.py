@@ -42,10 +42,6 @@ class ZhaltOnboardSchedulerSwitch(CoordinatorEntity[ZhaltCoordinator], SwitchEnt
         )
 
     @property
-    def available(self) -> bool:
-        return self.coordinator.connected
-
-    @property
     def is_on(self) -> bool | None:
         s = self.coordinator.settings
         if not s:

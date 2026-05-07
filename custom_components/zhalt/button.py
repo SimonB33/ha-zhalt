@@ -45,10 +45,6 @@ class _ZhaltBaseButton(ButtonEntity):
             configuration_url=f"http://{coordinator.host}/Zhalt",
         )
 
-    @property
-    def available(self) -> bool:
-        return self._coordinator.connected
-
     async def async_press(self) -> None:
         try:
             await self._coordinator.fire_action(self._action)

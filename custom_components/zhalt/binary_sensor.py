@@ -57,10 +57,6 @@ class ZhaltMistingBinarySensor(_ZhaltBaseBinarySensor):
         self._attr_unique_id = f"{entry.entry_id}_misting"
 
     @property
-    def available(self) -> bool:
-        return self.coordinator.connected
-
-    @property
     def is_on(self) -> bool | None:
         d = self.coordinator.data
         if not d:
