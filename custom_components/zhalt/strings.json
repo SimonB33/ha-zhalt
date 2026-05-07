@@ -18,5 +18,50 @@
     "abort": {
       "already_configured": "This Zhalt device is already configured."
     }
+  },
+  "entity": {
+    "binary_sensor": {
+      "misting": { "name": "Misting" },
+      "connected": { "name": "Connected" }
+    },
+    "sensor": {
+      "state": {
+        "name": "State",
+        "state": {
+          "Stopped": "Stopped",
+          "Standby": "Standby",
+          "Misting": "Misting"
+        }
+      },
+      "active_cycle": {
+        "name": "Active cycle",
+        "state": {
+          "None": "None",
+          "Manual": "Manual",
+          "Cycle1": "Cycle 1",
+          "Cycle2": "Cycle 2",
+          "Cycle3": "Cycle 3",
+          "Cycle4": "Cycle 4",
+          "Cycle5": "Cycle 5",
+          "Cycle6": "Cycle 6",
+          "Cycle7": "Cycle 7",
+          "Cycle8": "Cycle 8",
+          "Cycle9": "Cycle 9"
+        }
+      },
+      "elapsed_seconds": { "name": "Elapsed seconds" },
+      "planned_duration": { "name": "Planned duration" },
+      "remaining_seconds": { "name": "Remaining seconds" },
+      "firmware_version": { "name": "Firmware version" },
+      "device_clock": { "name": "Device clock" },
+      "machine_type": {
+        "name": "Machine type",
+        "state": {
+          "Evolution": "Evolution",
+          "Portable": "Portable"
+        }
+      },
+      "tick": { "name": "Tick" }
+    }
   }
 }
