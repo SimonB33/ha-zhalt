@@ -24,6 +24,13 @@
       "misting": { "name": "Misting" },
       "connected": { "name": "Connected" }
     },
+    "button": {
+      "mist_now": { "name": "Mist now" },
+      "stop": { "name": "Stop" },
+      "test_pump": { "name": "Test pump" },
+      "test_led": { "name": "Test LED" },
+      "test_buzzer": { "name": "Test buzzer" }
+    },
     "sensor": {
       "state": {
         "name": "State",
