@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Zhalt Evolution Connect",
+        "description": "Enter the host and port of your Zhalt device. Defaults work for the standard captive AP setup.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect. Check that Home Assistant has a route to the device.",
+      "bad_greeting": "Connected, but the device did not greet with 'CiaO'. Wrong device?",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This Zhalt device is already configured."
+    }
+  }
+}
