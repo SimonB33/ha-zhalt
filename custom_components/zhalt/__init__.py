@@ -6,6 +6,7 @@ import logging
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
@@ -73,15 +74,24 @@ def _async_register_services(hass: HomeAssistant) -> None:
     async def _handle_mist(call: ServiceCall) -> None:
         duration = int(call.data[ATTR_DURATION])
         for coordinator in _all_coordinators(hass):
-            await coordinator.fire_mist_with_duration(duration)
+            try:
+                await coordinator.fire_mist_with_duration(duration)
+            except RuntimeError as err:
+                raise HomeAssistantError(f"Zhalt device unreachable: {err}") from err
 
     async def _handle_stop(call: ServiceCall) -> None:
         for coordinator in _all_coordinators(hass):
-            await coordinator.fire_action("stop_send")
+            try:
+                await coordinator.fire_action("stop_send")
+            except RuntimeError as err:
+                raise HomeAssistantError(f"Zhalt device unreachable: {err}") from err
 
     async def _handle_refresh(call: ServiceCall) -> None:
         for coordinator in _all_coordinators(hass):
-            await coordinator.refresh_settings()
+            try:
+                await coordinator.refresh_settings()
+            except RuntimeError as err:
+                raise HomeAssistantError(f"Zhalt device unreachable: {err}") from err
 
     hass.services.async_register(DOMAIN, SERVICE_MIST, _handle_mist, schema=MIST_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_STOP, _handle_stop, schema=EMPTY_SCHEMA)

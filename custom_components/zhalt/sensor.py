@@ -73,6 +73,10 @@ class _ZhaltBaseSensor(CoordinatorEntity[ZhaltCoordinator], SensorEntity):
             configuration_url=f"http://{coordinator.host}/Zhalt",
         )
 
+    @property
+    def available(self) -> bool:
+        return self.coordinator.connected
+
 
 class ZhaltStateSensor(_ZhaltBaseSensor):
     _attr_translation_key = "state"

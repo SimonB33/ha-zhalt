@@ -6,6 +6,7 @@ from typing import Any
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -41,6 +42,10 @@ class ZhaltOnboardSchedulerSwitch(CoordinatorEntity[ZhaltCoordinator], SwitchEnt
         )
 
     @property
+    def available(self) -> bool:
+        return self.coordinator.connected
+
+    @property
     def is_on(self) -> bool | None:
         s = self.coordinator.settings
         if not s:
@@ -49,9 +54,15 @@ class ZhaltOnboardSchedulerSwitch(CoordinatorEntity[ZhaltCoordinator], SwitchEnt
         return any(c.get("act") == 1 for c in cycles.values())
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self.coordinator.restore_cycles()
+        try:
+            await self.coordinator.restore_cycles()
+        except RuntimeError as err:
+            raise HomeAssistantError(f"Zhalt device unreachable: {err}") from err
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.disable_all_cycles()
+        try:
+            await self.coordinator.disable_all_cycles()
+        except RuntimeError as err:
+            raise HomeAssistantError(f"Zhalt device unreachable: {err}") from err
         await self.coordinator.async_request_refresh()
