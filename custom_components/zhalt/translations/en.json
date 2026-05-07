@@ -19,6 +19,26 @@
       "already_configured": "This Zhalt device is already configured."
     }
   },
+  "services": {
+    "mist": {
+      "name": "Mist",
+      "description": "Mist for a specific duration, then auto-stop.",
+      "fields": {
+        "duration": {
+          "name": "Duration",
+          "description": "How long to mist, in seconds (1-120)."
+        }
+      }
+    },
+    "stop": {
+      "name": "Stop",
+      "description": "Stop misting immediately."
+    },
+    "refresh": {
+      "name": "Refresh settings",
+      "description": "Re-handshake with the device to pull fresh settings."
+    }
+  },
   "entity": {
     "binary_sensor": {
       "misting": { "name": "Misting" },

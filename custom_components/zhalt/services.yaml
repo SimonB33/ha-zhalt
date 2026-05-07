@@ -1,0 +1,23 @@
+mist:
+  name: Mist
+  description: Mist for a specific duration in seconds, then auto-stop. Idempotent if already misting.
+  fields:
+    duration:
+      name: Duration
+      description: How long to mist, in seconds (1-120).
+      required: true
+      example: 15
+      selector:
+        number:
+          min: 1
+          max: 120
+          unit_of_measurement: seconds
+          mode: slider
+
+stop:
+  name: Stop
+  description: Stop misting immediately. Note - the device will block manual mists for the rest of the day after a stop.
+
+refresh:
+  name: Refresh settings
+  description: Force re-handshake with the device to pull fresh settings (G_imp).
