@@ -54,11 +54,9 @@ class ZhaltOnboardSchedulerSwitch(CoordinatorEntity[ZhaltCoordinator], SwitchEnt
             await self.coordinator.restore_cycles()
         except RuntimeError as err:
             raise HomeAssistantError(f"Zhalt device unreachable: {err}") from err
-        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         try:
             await self.coordinator.disable_all_cycles()
         except RuntimeError as err:
             raise HomeAssistantError(f"Zhalt device unreachable: {err}") from err
-        await self.coordinator.async_request_refresh()
