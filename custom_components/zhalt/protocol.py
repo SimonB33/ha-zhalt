@@ -318,7 +318,7 @@ def build_p_imp_settings(
             "0",  # lingua_voluta
             "0",  # captive_voluto
             "0",  # chan_voluto
-            "0",  # secure_save
+            "1",  # secure_save — persist settings to device NVS
         ]
     )
 

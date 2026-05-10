@@ -1,7 +1,7 @@
 {
   "domain": "zhalt",
   "name": "Zhalt Evolution Connect",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "documentation": "https://github.com/SimonB33/ha-zhalt",
   "issue_tracker": "https://github.com/SimonB33/ha-zhalt/issues",
   "codeowners": ["@SimonB33"],
