@@ -45,6 +45,8 @@ from .const import (
     RELOAD_COOLDOWN_S,
     SETTINGS_HOLD_S,
     STARTUP_HOLD_S,
+    STOP_RETRY_BACKOFF_S,
+    STOP_RETRY_TOTAL_S,
     STORAGE_KEY,
     STORAGE_VERSION,
 )
@@ -159,16 +161,57 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
         if self._auto_stop_task and not self._auto_stop_task.done():
             _LOGGER.warning("auto-stop timer already running; ignoring duplicate mist")
             return
-        await self._ensure_session(seconds + 5.0)
+        # Hold the session through mist + the full stop_send retry window so
+        # the auto-stop doesn't have to cold-reconnect on a flaky network.
+        await self._ensure_session(seconds + STOP_RETRY_TOTAL_S + 5.0)
         self._pending_actions["mist_send"] = 1
         self._auto_stop_task = self.hass.async_create_task(self._auto_stop(seconds))
 
     async def _auto_stop(self, seconds: int) -> None:
+        """Sleep then send stop_send, retrying aggressively on failure.
+
+        Stop is safety-critical: if it never lands, the device sprays in
+        Manual mode indefinitely (no onboard timeout for Manual). Each retry
+        re-opens the session via fire_action -> _ensure_session.
+        """
         try:
             await asyncio.sleep(seconds)
-            await self.fire_action("stop_send")
         except asyncio.CancelledError:
             raise
+        last_err: Exception | None = None
+        for attempt, delay in enumerate(STOP_RETRY_BACKOFF_S):
+            if delay:
+                try:
+                    await asyncio.sleep(delay)
+                except asyncio.CancelledError:
+                    raise
+            try:
+                await self.fire_action("stop_send")
+                if attempt > 0:
+                    _LOGGER.warning(
+                        "stop_send succeeded on attempt %d/%d",
+                        attempt + 1,
+                        len(STOP_RETRY_BACKOFF_S),
+                    )
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:  # noqa: BLE001
+                last_err = err
+                _LOGGER.warning(
+                    "stop_send attempt %d/%d failed: %s",
+                    attempt + 1,
+                    len(STOP_RETRY_BACKOFF_S),
+                    err,
+                )
+        _LOGGER.error(
+            "stop_send FAILED after %d attempts (~%ds total). Device may still "
+            "be misting in Manual mode — manual intervention may be required. "
+            "Last error: %s",
+            len(STOP_RETRY_BACKOFF_S),
+            STOP_RETRY_TOTAL_S,
+            last_err,
+        )
 
     async def write_settings(self, new_settings: dict[str, Any]) -> None:
         """Send a B-form P_imp with the given settings; refreshes self.settings on echo."""

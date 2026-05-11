@@ -33,6 +33,12 @@ HEALTHCHECK_WINDOW_HOURS: tuple[int, int] = (5, 23)  # 05:00 inclusive, 23:00 ex
 # With HEALTHCHECK_INTERVAL_S = 30 min, threshold of 3 = ~1.5 hr worst-case recovery.
 MAX_CONSECUTIVE_FAILURES = 3
 RELOAD_COOLDOWN_S = 30 * 60
+
+# Auto-stop retry schedule. If stop_send fails the device keeps misting in
+# Manual mode (no onboard timeout), so we retry aggressively with backoff.
+# Total window must fit inside the mist session hold (see fire_mist_with_duration).
+STOP_RETRY_BACKOFF_S: tuple[float, ...] = (0.0, 1.0, 2.0, 4.0, 8.0, 16.0)
+STOP_RETRY_TOTAL_S: float = sum(STOP_RETRY_BACKOFF_S)  # 31.0s
 ACTION_HOLD_S: dict[str, float] = {
     "mist_send": 75.0,        # default device mist is ~70s; cover + small buffer
     "pulse_send": 75.0,
