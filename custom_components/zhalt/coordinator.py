@@ -212,6 +212,18 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
             STOP_RETRY_TOTAL_S,
             last_err,
         )
+        # Fire a custom event so HA automations can alert without depending
+        # on the `system_log: fire_event: true` config (off by default).
+        self.hass.bus.async_fire(
+            f"{DOMAIN}_runaway_spray",
+            {
+                "attempts": len(STOP_RETRY_BACKOFF_S),
+                "total_seconds": STOP_RETRY_TOTAL_S,
+                "last_error": str(last_err) if last_err else "",
+                "conn_state": str(self.conn_state),
+                "host": self.host,
+            },
+        )
 
     async def write_settings(self, new_settings: dict[str, Any]) -> None:
         """Send a B-form P_imp with the given settings; refreshes self.settings on echo."""
