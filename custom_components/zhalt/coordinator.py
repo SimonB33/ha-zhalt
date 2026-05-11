@@ -38,9 +38,11 @@ from .const import (
     HEALTHCHECK_HOLD_S,
     HEALTHCHECK_INTERVAL_S,
     HEALTHCHECK_WINDOW_HOURS,
+    MAX_CONSECUTIVE_FAILURES,
     POLL_INTERVAL_S,
     RECONNECT_BACKOFF_S,
     REFRESH_HOLD_S,
+    RELOAD_COOLDOWN_S,
     SETTINGS_HOLD_S,
     STARTUP_HOLD_S,
     STORAGE_KEY,
@@ -60,13 +62,16 @@ class ConnState(str, Enum):
 class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
     """Manages on-demand WebSocket sessions and exposes parsed state to entities."""
 
-    def __init__(self, hass: HomeAssistant, *, host: str, port: int) -> None:
+    def __init__(
+        self, hass: HomeAssistant, *, entry_id: str, host: str, port: int
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN}_{host}",
             update_interval=None,  # push-driven; no polling by HA
         )
+        self._entry_id = entry_id
         self.host = host
         self.port = port
         self.url = f"ws://{host}:{port}"
@@ -86,6 +91,10 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
         self._got_initial_g_imp = asyncio.Event()
         self._connected_event = asyncio.Event()
         self._active_until_mono: float = 0.0
+        # Self-heal counters: track session_loop invocations that fail to reach
+        # CONNECTED. After MAX_CONSECUTIVE_FAILURES in a row, schedule a reload.
+        self._consecutive_failures: int = 0
+        self._last_reload_mono: float = 0.0
 
     # ---- public properties ---------------------------------------------------
 
@@ -226,6 +235,7 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
     async def _session_loop(self) -> None:
         """One on-demand session: connect, handshake, run until deadline expires."""
         attempt = 0
+        had_connected = False
         try:
             while not self._stopped.is_set():
                 try:
@@ -238,6 +248,10 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
                         await self._handshake(ws)
                         self.conn_state = ConnState.CONNECTED
                         attempt = 0
+                        if not had_connected:
+                            _LOGGER.info("Zhalt session established")
+                        had_connected = True
+                        self._consecutive_failures = 0
                         self._connected_event.set()
                         recv_task = asyncio.create_task(self._recv_loop(ws))
                         ka_task = asyncio.create_task(self._keepalive_loop(ws))
@@ -280,6 +294,15 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
             self.conn_state = ConnState.DISCONNECTED
             self._connected_event.clear()
             self.async_set_updated_data(self.data)
+            if not had_connected and not self._stopped.is_set():
+                self._consecutive_failures += 1
+                _LOGGER.info(
+                    "Zhalt session attempt ended without connection (%d/%d consecutive)",
+                    self._consecutive_failures,
+                    MAX_CONSECUTIVE_FAILURES,
+                )
+                if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    self._maybe_request_self_reload()
 
     async def _healthcheck_loop(self) -> None:
         """Brief refresh session every HEALTHCHECK_INTERVAL_S during the active window."""
@@ -295,10 +318,33 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
             now_local = dt_util.now()
             if not (start_h <= now_local.hour < end_h):
                 continue
+            _LOGGER.info("Zhalt healthcheck firing")
             try:
                 await self._ensure_session(HEALTHCHECK_HOLD_S)
             except Exception as err:  # noqa: BLE001
-                _LOGGER.debug("healthcheck session skipped: %s", err)
+                _LOGGER.info("Zhalt healthcheck session failed: %s", err)
+
+    def _maybe_request_self_reload(self) -> None:
+        """Schedule an integration reload after persistent connection failure.
+
+        Called from `_session_loop` when `_consecutive_failures` crosses the
+        threshold. Rate-limited by `RELOAD_COOLDOWN_S` so we don't spin if the
+        device is genuinely unreachable for an extended period.
+        """
+        now = time.monotonic()
+        if now - self._last_reload_mono < RELOAD_COOLDOWN_S:
+            _LOGGER.info(
+                "Zhalt: reload threshold reached but within cooldown; skipping"
+            )
+            return
+        self._last_reload_mono = now
+        _LOGGER.warning(
+            "Zhalt: %d consecutive failed sessions, triggering integration reload",
+            self._consecutive_failures,
+        )
+        self.hass.async_create_task(
+            self.hass.config_entries.async_reload(self._entry_id)
+        )
 
     async def _session_timer(self) -> None:
         """Resolves when the active deadline passes, allowing the session to close."""

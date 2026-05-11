@@ -33,6 +33,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Zhalt from a config entry."""
     coordinator = ZhaltCoordinator(
         hass,
+        entry_id=entry.entry_id,
         host=entry.data[CONF_HOST],
         port=entry.data[CONF_PORT],
     )

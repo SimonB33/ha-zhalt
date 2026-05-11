@@ -26,6 +26,13 @@ ACTION_HOLD_DEFAULT_S = 5.0
 HEALTHCHECK_INTERVAL_S = 30 * 60
 HEALTHCHECK_HOLD_S = 30.0
 HEALTHCHECK_WINDOW_HOURS: tuple[int, int] = (5, 23)  # 05:00 inclusive, 23:00 exclusive (HA local time)
+
+# Self-heal: if this many session_loop invocations end without ever reaching
+# CONNECTED, the coordinator schedules an integration reload. RELOAD_COOLDOWN_S
+# is the minimum gap between such reloads so we don't spin against a dead device.
+# With HEALTHCHECK_INTERVAL_S = 30 min, threshold of 3 = ~1.5 hr worst-case recovery.
+MAX_CONSECUTIVE_FAILURES = 3
+RELOAD_COOLDOWN_S = 30 * 60
 ACTION_HOLD_S: dict[str, float] = {
     "mist_send": 75.0,        # default device mist is ~70s; cover + small buffer
     "pulse_send": 75.0,
