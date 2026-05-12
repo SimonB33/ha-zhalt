@@ -63,6 +63,27 @@ class ZhaltMistingBinarySensor(_ZhaltBaseBinarySensor):
             return None
         return d.get("operating_mode") == protocol.OP_MISTING
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """v0.1.9 diagnostic: expose candidate G_dat token values so we can
+        identify which actually tracks "pump running" under Manual mode.
+        Polling the entity during a 70s mist gives a per-update snapshot
+        without needing access to the home-assistant.log file.
+        Remove once parse_g_dat exposes is_pump_running."""
+        d = self.coordinator.data
+        if not d:
+            return None
+        return {
+            "diag_operating_mode": d.get("operating_mode"),
+            "diag_substate": d.get("substate"),
+            "diag_cycle_state": d.get("cycle_state"),
+            "diag_elapsed_in_cycle": d.get("elapsed_in_cycle"),
+            "diag_remaining_sec": d.get("remaining_sec"),
+            "diag_mist_done": d.get("mist_done"),
+            "diag_stop_done": d.get("stop_done"),
+            "diag_active_cycle_id": d.get("active_cycle_id"),
+        }
+
 
 class ZhaltConnectedBinarySensor(_ZhaltBaseBinarySensor):
     _attr_translation_key = "connected"
