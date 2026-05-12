@@ -67,5 +67,7 @@ CONF_PORT = "port"
 SERVICE_MIST = "mist"
 SERVICE_STOP = "stop"
 SERVICE_REFRESH = "refresh"
+SERVICE_DISABLE_CYCLES = "disable_all_cycles"
+SERVICE_RESTORE_CYCLES = "restore_cycles"
 
 ATTR_DURATION = "duration"

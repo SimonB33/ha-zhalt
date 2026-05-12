@@ -15,8 +15,10 @@ from .const import (
     CONF_PORT,
     DOMAIN,
     PLATFORMS,
+    SERVICE_DISABLE_CYCLES,
     SERVICE_MIST,
     SERVICE_REFRESH,
+    SERVICE_RESTORE_CYCLES,
     SERVICE_STOP,
 )
 from .coordinator import ZhaltCoordinator
@@ -58,7 +60,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await coordinator.async_shutdown()
 
     if not hass.data.get(DOMAIN):
-        for svc in (SERVICE_MIST, SERVICE_STOP, SERVICE_REFRESH):
+        for svc in (
+            SERVICE_MIST,
+            SERVICE_STOP,
+            SERVICE_REFRESH,
+            SERVICE_DISABLE_CYCLES,
+            SERVICE_RESTORE_CYCLES,
+        ):
             if hass.services.has_service(DOMAIN, svc):
                 hass.services.async_remove(DOMAIN, svc)
     return True
@@ -94,8 +102,28 @@ def _async_register_services(hass: HomeAssistant) -> None:
             except RuntimeError as err:
                 raise HomeAssistantError(f"Zhalt device unreachable: {err}") from err
 
+    async def _handle_disable_cycles(call: ServiceCall) -> None:
+        for coordinator in _all_coordinators(hass):
+            try:
+                await coordinator.disable_all_cycles()
+            except RuntimeError as err:
+                raise HomeAssistantError(f"Zhalt device unreachable: {err}") from err
+
+    async def _handle_restore_cycles(call: ServiceCall) -> None:
+        for coordinator in _all_coordinators(hass):
+            try:
+                await coordinator.restore_cycles()
+            except RuntimeError as err:
+                raise HomeAssistantError(f"Zhalt device unreachable: {err}") from err
+
     hass.services.async_register(DOMAIN, SERVICE_MIST, _handle_mist, schema=MIST_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_STOP, _handle_stop, schema=EMPTY_SCHEMA)
     hass.services.async_register(
         DOMAIN, SERVICE_REFRESH, _handle_refresh, schema=EMPTY_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_DISABLE_CYCLES, _handle_disable_cycles, schema=EMPTY_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_RESTORE_CYCLES, _handle_restore_cycles, schema=EMPTY_SCHEMA
     )

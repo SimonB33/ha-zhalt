@@ -21,3 +21,11 @@ stop:
 refresh:
   name: Refresh settings
   description: Force re-handshake with the device to pull fresh settings (G_imp).
+
+disable_all_cycles:
+  name: Disable all on-device cycles
+  description: Push a full settings frame with every cycle's `act` flag set to 0. Use this to stop the device's onboard scheduler firing programs autonomously, so HA becomes the sole source of truth. The current settings are cached and can be restored with restore_cycles.
+
+restore_cycles:
+  name: Restore on-device cycles
+  description: Restore the cached original cycle settings (act flags as observed when the integration first connected). Reverse of disable_all_cycles.
