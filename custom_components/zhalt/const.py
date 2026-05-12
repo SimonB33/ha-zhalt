@@ -39,6 +39,14 @@ RELOAD_COOLDOWN_S = 30 * 60
 # Total window must fit inside the mist session hold (see fire_mist_with_duration).
 STOP_RETRY_BACKOFF_S: tuple[float, ...] = (0.0, 1.0, 2.0, 4.0, 8.0, 16.0)
 STOP_RETRY_TOTAL_S: float = sum(STOP_RETRY_BACKOFF_S)  # 31.0s
+
+# Initial-mist session-establish retry schedule. If the device is briefly
+# unreachable (Wi-Fi flap / DHCP renewal / bridge blip) the user sees an
+# immediate "device unreachable" error. Retrying a few times with short
+# backoff lets transient outages recover before surfacing the failure.
+# Each attempt itself can take up to HANDSHAKE_TIMEOUT_S*2 = ~20s.
+SESSION_ESTABLISH_RETRY_BACKOFF_S: tuple[float, ...] = (2.0, 5.0, 10.0)
+SESSION_ESTABLISH_RETRY_TOTAL_S: float = sum(SESSION_ESTABLISH_RETRY_BACKOFF_S)  # 17.0s
 ACTION_HOLD_S: dict[str, float] = {
     "mist_send": 75.0,        # default device mist is ~70s; cover + small buffer
     "pulse_send": 75.0,

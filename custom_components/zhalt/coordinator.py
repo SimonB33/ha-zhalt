@@ -43,6 +43,7 @@ from .const import (
     RECONNECT_BACKOFF_S,
     REFRESH_HOLD_S,
     RELOAD_COOLDOWN_S,
+    SESSION_ESTABLISH_RETRY_BACKOFF_S,
     SETTINGS_HOLD_S,
     STARTUP_HOLD_S,
     STOP_RETRY_BACKOFF_S,
@@ -153,6 +154,48 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
         await self._ensure_session(hold)
         self._pending_actions[name] = 1
 
+    async def _ensure_session_with_retry(
+        self, hold_seconds: float, *, wait_for_g_imp: bool = False
+    ) -> None:
+        """Like _ensure_session but retries transient establish failures.
+
+        A single "session failed to establish" can be a brief Wi-Fi flap or
+        a DHCP renewal — retrying a handful of times with short backoff
+        recovers from those without surfacing a hard error to the user.
+        Each underlying attempt itself can take up to HANDSHAKE_TIMEOUT_S*2.
+        """
+        last_err: Exception | None = None
+        attempts = len(SESSION_ESTABLISH_RETRY_BACKOFF_S) + 1
+        for attempt, backoff in enumerate((0.0,) + SESSION_ESTABLISH_RETRY_BACKOFF_S):
+            if backoff:
+                try:
+                    await asyncio.sleep(backoff)
+                except asyncio.CancelledError:
+                    raise
+            try:
+                await self._ensure_session(
+                    hold_seconds, wait_for_g_imp=wait_for_g_imp
+                )
+                if attempt > 0:
+                    _LOGGER.info(
+                        "Zhalt session established on attempt %d/%d",
+                        attempt + 1,
+                        attempts,
+                    )
+                return
+            except asyncio.CancelledError:
+                raise
+            except RuntimeError as err:
+                last_err = err
+                _LOGGER.warning(
+                    "session establish attempt %d/%d failed: %s",
+                    attempt + 1,
+                    attempts,
+                    err,
+                )
+        assert last_err is not None
+        raise last_err
+
     async def fire_mist_with_duration(self, seconds: int) -> None:
         """Fire mist and schedule auto-stop after `seconds`. Idempotent if already misting."""
         if self.is_misting:
@@ -163,7 +206,9 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
             return
         # Hold the session through mist + the full stop_send retry window so
         # the auto-stop doesn't have to cold-reconnect on a flaky network.
-        await self._ensure_session(seconds + STOP_RETRY_TOTAL_S + 5.0)
+        # Retry the initial establish on transient failures so brief flaps
+        # don't surface to the user as a hard "device unreachable" error.
+        await self._ensure_session_with_retry(seconds + STOP_RETRY_TOTAL_S + 5.0)
         self._pending_actions["mist_send"] = 1
         self._auto_stop_task = self.hass.async_create_task(self._auto_stop(seconds))
 
