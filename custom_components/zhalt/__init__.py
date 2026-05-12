@@ -122,32 +122,26 @@ def _async_register_services(hass: HomeAssistant) -> None:
         for coordinator in _all_coordinators(hass):
             cached = coordinator._cached_original_settings
             current = coordinator.settings
-            _LOGGER.warning(
-                "log_cycles: cached_original_settings present=%s, current_settings present=%s",
-                cached is not None,
-                current is not None,
-            )
+            lines = [
+                "log_cycles dump (cached = HA-stored snapshot at first observed act=1; current = latest G_imp)",
+            ]
             for label, src in (("cached", cached), ("current", current)):
                 if src is None or "cycles" not in src:
-                    _LOGGER.warning("log_cycles[%s]: no cycles data", label)
+                    lines.append(f"  [{label}] NO DATA")
                     continue
                 for cycle_label, c in src["cycles"].items():
-                    _LOGGER.warning(
-                        "log_cycles[%s] %s: act=%s mode=%s start=%02d:%02d days_bm=%s "
-                        "dur_s=%s end=%02d:%02d work_s=%s pause_m=%s",
-                        label,
-                        cycle_label,
-                        c.get("act"),
-                        c.get("mode"),
-                        c.get("start_hour", 0) or 0,
-                        c.get("start_minute", 0) or 0,
-                        c.get("days_bitmap"),
-                        c.get("duration_seconds"),
-                        c.get("end_hour", 0) or 0,
-                        c.get("end_minute", 0) or 0,
-                        c.get("work_seconds"),
-                        c.get("pause_minutes"),
+                    sh = c.get("start_hour", 0) or 0
+                    sm = c.get("start_minute", 0) or 0
+                    eh = c.get("end_hour", 0) or 0
+                    em = c.get("end_minute", 0) or 0
+                    lines.append(
+                        f"  [{label}] {cycle_label}: act={c.get('act')} "
+                        f"mode={c.get('mode')} start={sh:02d}:{sm:02d} "
+                        f"days_bm={c.get('days_bitmap')} dur_s={c.get('duration_seconds')} "
+                        f"end={eh:02d}:{em:02d} "
+                        f"work_s={c.get('work_seconds')} pause_m={c.get('pause_minutes')}"
                     )
+            _LOGGER.warning("\n".join(lines))
 
     hass.services.async_register(DOMAIN, SERVICE_MIST, _handle_mist, schema=MIST_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_STOP, _handle_stop, schema=EMPTY_SCHEMA)
