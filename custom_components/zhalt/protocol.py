@@ -47,6 +47,19 @@ CYCLE_MODE_DIRECT = 1
 CYCLE_MODE_PULSE = 2
 CYCLE_MODE_NAMES = {1: "Direct", 2: "Pulse"}
 
+# cycle_state (G_dat token 45) — per-cycle state machine observed during
+# DIRECT and PULSE mists (Manual mode, 2026-05-12):
+#   0 = idle, no cycle in progress
+#   1 = phase 1: active high-pressure spray (concentrated pesticide). op=9.
+#       Lasts ~70-80% of configured duration (e.g. ~8s of a 10s PULSE,
+#       ~13s of a 70s DIRECT). elapsed_in_cycle counts at ~22 units/s.
+#   2 = phase 2: extended spray, likely mains-water diluted. op=6 ("Stopped")
+#       despite the pump still delivering visible spray. elapsed resets to 0.
+#       Lasts the remaining 20-30% of the configured duration.
+#   3 = wind-down: cycle complete, no spray. op=7 (Standby). Brief transition.
+# is_pump_running is true when cycle_state in (1, 2) — see derived field below.
+PUMP_RUNNING_CYCLE_STATES = (1, 2)
+
 DEFAULT_LANG = "en-US"
 DEFAULT_PASSWORD = "freezanz"
 
@@ -153,6 +166,7 @@ def parse_g_dat(text: str) -> dict[str, Any]:
     planned = _to_int_at(tokens, 48) or 0
     elapsed = _to_int_at(tokens, 52) or 0
     active_cycle = _to_int_at(tokens, 44)
+    cycle_state = _to_int_at(tokens, 45)
 
     return {
         "cmd": tokens[0],
@@ -185,7 +199,8 @@ def parse_g_dat(text: str) -> dict[str, Any]:
         "secondary_comm_state": tokens[43] if len(tokens) > 43 else None,
         "active_cycle_id": active_cycle,
         "active_cycle_name": _active_cycle_name(active_cycle),
-        "cycle_state": _to_int_at(tokens, 45),
+        "cycle_state": cycle_state,
+        "is_pump_running": cycle_state in PUMP_RUNNING_CYCLE_STATES,
         "planned_duration_sec": planned,
         "pause_seconds": _to_int_at(tokens, 50),
         "elapsed_in_cycle": elapsed,
