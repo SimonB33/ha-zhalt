@@ -29,3 +29,7 @@ disable_all_cycles:
 restore_cycles:
   name: Restore on-device cycles
   description: Restore the cached original cycle settings (act flags as observed when the integration first connected). Reverse of disable_all_cycles.
+
+log_cycles:
+  name: Log on-device cycles (diagnostic)
+  description: Emit a WARNING-level log line for every cycle (C1..C6, CS, CE, CJ) in both the cached original settings and the current settings, so you can identify which slots had act=1 before disable_all_cycles was called. Reads via system_log/list.

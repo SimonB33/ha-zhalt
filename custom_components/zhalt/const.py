@@ -69,5 +69,6 @@ SERVICE_STOP = "stop"
 SERVICE_REFRESH = "refresh"
 SERVICE_DISABLE_CYCLES = "disable_all_cycles"
 SERVICE_RESTORE_CYCLES = "restore_cycles"
+SERVICE_LOG_CYCLES = "log_cycles"
 
 ATTR_DURATION = "duration"

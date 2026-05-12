@@ -16,6 +16,7 @@ from .const import (
     DOMAIN,
     PLATFORMS,
     SERVICE_DISABLE_CYCLES,
+    SERVICE_LOG_CYCLES,
     SERVICE_MIST,
     SERVICE_REFRESH,
     SERVICE_RESTORE_CYCLES,
@@ -66,6 +67,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             SERVICE_REFRESH,
             SERVICE_DISABLE_CYCLES,
             SERVICE_RESTORE_CYCLES,
+            SERVICE_LOG_CYCLES,
         ):
             if hass.services.has_service(DOMAIN, svc):
                 hass.services.async_remove(DOMAIN, svc)
@@ -116,6 +118,37 @@ def _async_register_services(hass: HomeAssistant) -> None:
             except RuntimeError as err:
                 raise HomeAssistantError(f"Zhalt device unreachable: {err}") from err
 
+    async def _handle_log_cycles(call: ServiceCall) -> None:
+        for coordinator in _all_coordinators(hass):
+            cached = coordinator._cached_original_settings
+            current = coordinator.settings
+            _LOGGER.warning(
+                "log_cycles: cached_original_settings present=%s, current_settings present=%s",
+                cached is not None,
+                current is not None,
+            )
+            for label, src in (("cached", cached), ("current", current)):
+                if src is None or "cycles" not in src:
+                    _LOGGER.warning("log_cycles[%s]: no cycles data", label)
+                    continue
+                for cycle_label, c in src["cycles"].items():
+                    _LOGGER.warning(
+                        "log_cycles[%s] %s: act=%s mode=%s start=%02d:%02d days_bm=%s "
+                        "dur_s=%s end=%02d:%02d work_s=%s pause_m=%s",
+                        label,
+                        cycle_label,
+                        c.get("act"),
+                        c.get("mode"),
+                        c.get("start_hour", 0) or 0,
+                        c.get("start_minute", 0) or 0,
+                        c.get("days_bitmap"),
+                        c.get("duration_seconds"),
+                        c.get("end_hour", 0) or 0,
+                        c.get("end_minute", 0) or 0,
+                        c.get("work_seconds"),
+                        c.get("pause_minutes"),
+                    )
+
     hass.services.async_register(DOMAIN, SERVICE_MIST, _handle_mist, schema=MIST_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_STOP, _handle_stop, schema=EMPTY_SCHEMA)
     hass.services.async_register(
@@ -126,4 +159,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_RESTORE_CYCLES, _handle_restore_cycles, schema=EMPTY_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_LOG_CYCLES, _handle_log_cycles, schema=EMPTY_SCHEMA
     )
