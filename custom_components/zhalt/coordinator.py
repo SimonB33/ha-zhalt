@@ -35,9 +35,6 @@ from .const import (
     DAT_STALE_AFTER_S,
     DOMAIN,
     HANDSHAKE_TIMEOUT_S,
-    HEALTHCHECK_HOLD_S,
-    HEALTHCHECK_INTERVAL_S,
-    HEALTHCHECK_WINDOW_HOURS,
     MAX_CONSECUTIVE_FAILURES,
     POLL_INTERVAL_S,
     RECONNECT_BACKOFF_S,
@@ -86,7 +83,6 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
         self._ws: Any | None = None
         self._session_task: asyncio.Task[None] | None = None
         self._auto_stop_task: asyncio.Task[None] | None = None
-        self._healthcheck_task: asyncio.Task[None] | None = None
         self._stopped = asyncio.Event()
         self._pending_actions: dict[str, int] = {}
         self._cached_original_settings: dict[str, Any] | None = None
@@ -127,14 +123,10 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
             await self._ensure_session(STARTUP_HOLD_S, wait_for_g_imp=True)
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("startup session failed: %s (will retry on first action)", err)
-        # Background periodic health check during typical-use hours.
-        self._healthcheck_task = self.hass.async_create_background_task(
-            self._healthcheck_loop(), name=f"{DOMAIN}_healthcheck"
-        )
 
     async def async_shutdown(self) -> None:
         self._stopped.set()
-        for task in (self._auto_stop_task, self._healthcheck_task, self._session_task):
+        for task in (self._auto_stop_task, self._session_task):
             if task and not task.done():
                 task.cancel()
         if self._ws is not None:
@@ -403,26 +395,6 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
                 )
                 if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                     self._maybe_request_self_reload()
-
-    async def _healthcheck_loop(self) -> None:
-        """Brief refresh session every HEALTHCHECK_INTERVAL_S during the active window."""
-        start_h, end_h = HEALTHCHECK_WINDOW_HOURS
-        while not self._stopped.is_set():
-            try:
-                await asyncio.wait_for(
-                    self._stopped.wait(), timeout=HEALTHCHECK_INTERVAL_S
-                )
-                return
-            except asyncio.TimeoutError:
-                pass
-            now_local = dt_util.now()
-            if not (start_h <= now_local.hour < end_h):
-                continue
-            _LOGGER.info("Zhalt healthcheck firing")
-            try:
-                await self._ensure_session(HEALTHCHECK_HOLD_S)
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.info("Zhalt healthcheck session failed: %s", err)
 
     def _maybe_request_self_reload(self) -> None:
         """Schedule an integration reload after persistent connection failure.
