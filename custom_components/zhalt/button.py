@@ -65,8 +65,8 @@ class ZhaltMistNowButton(_ZhaltBaseButton):
 
 
 class ZhaltPulseNowButton(_ZhaltBaseButton):
-    _attr_translation_key = "pulse_now"
-    _attr_name = "Pulse now"
+    _attr_translation_key = "start_pulse_session"
+    _attr_name = "Start pulse session"
     _attr_icon = "mdi:sprinkler"
     _action = "pulse_send"
 

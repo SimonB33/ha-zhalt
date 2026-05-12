@@ -27,9 +27,10 @@ ACTION_HOLD_DEFAULT_S = 5.0
 # is the minimum gap between such reloads so we don't spin against a dead device.
 # Sessions only run from user/automation actions now (no healthcheck loop),
 # so the threshold is hit only when scheduled sprays / manual presses repeatedly
-# fail to reach CONNECTED.
+# fail to reach CONNECTED. The cooldown is also reset to 0 whenever a session
+# does reach CONNECTED, so a successful reconnect re-arms the self-heal path.
 MAX_CONSECUTIVE_FAILURES = 3
-RELOAD_COOLDOWN_S = 30 * 60
+RELOAD_COOLDOWN_S = 5 * 60
 
 # Auto-stop retry schedule. If stop_send fails the device keeps misting in
 # Manual mode (no onboard timeout), so we retry aggressively with backoff.

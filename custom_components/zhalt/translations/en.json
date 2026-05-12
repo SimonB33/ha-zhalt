@@ -46,6 +46,7 @@
     },
     "button": {
       "mist_now": { "name": "Mist now" },
+      "start_pulse_session": { "name": "Start pulse session" },
       "stop": { "name": "Stop" },
       "test_pump": { "name": "Test pump" },
       "test_led": { "name": "Test LED" },

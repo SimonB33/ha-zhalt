@@ -363,6 +363,7 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
                             _LOGGER.info("Zhalt session established")
                         had_connected = True
                         self._consecutive_failures = 0
+                        self._last_reload_mono = 0.0
                         self._connected_event.set()
                         recv_task = asyncio.create_task(self._recv_loop(ws))
                         ka_task = asyncio.create_task(self._keepalive_loop(ws))
