@@ -22,6 +22,7 @@ async def async_setup_entry(
     async_add_entities(
         [
             ZhaltMistNowButton(coordinator, entry),
+            ZhaltPulseNowButton(coordinator, entry),
             ZhaltStopButton(coordinator, entry),
             ZhaltTestPumpButton(coordinator, entry),
             ZhaltTestLedButton(coordinator, entry),
@@ -61,6 +62,17 @@ class ZhaltMistNowButton(_ZhaltBaseButton):
     def __init__(self, coordinator: ZhaltCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
         self._attr_unique_id = f"{entry.entry_id}_mist_now"
+
+
+class ZhaltPulseNowButton(_ZhaltBaseButton):
+    _attr_translation_key = "pulse_now"
+    _attr_name = "Pulse now"
+    _attr_icon = "mdi:sprinkler"
+    _action = "pulse_send"
+
+    def __init__(self, coordinator: ZhaltCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_pulse_now"
 
 
 class ZhaltStopButton(_ZhaltBaseButton):
