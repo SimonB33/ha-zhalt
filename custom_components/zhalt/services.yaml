@@ -33,3 +33,20 @@ restore_cycles:
 log_cycles:
   name: Log on-device cycles (diagnostic)
   description: Emit a WARNING-level log line for every cycle (C1..C6, CS, CE, CJ) in both the cached original settings and the current settings, so you can identify which slots had act=1 before disable_all_cycles was called. Reads via system_log/list.
+
+set_cs_duration:
+  name: Set CS pulse-session duration
+  description: Modify the CS (Start cycle) end_hour and end_minute so the next pulse_send runs for the given duration. CS is the device's on-board "Start button" cycle template — pressing pulse_send launches a pulse program for CS's duration (10s mist every 5min). Set once and leave; doesn't fire anything by itself.
+  fields:
+    minutes:
+      name: Duration (minutes)
+      description: How long the next pulse_send session should run. Typical values 30-90.
+      required: true
+      example: 60
+      selector:
+        number:
+          min: 1
+          max: 120
+          unit_of_measurement: minutes
+          mode: slider
+          step: 1

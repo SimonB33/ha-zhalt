@@ -282,6 +282,25 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
             raise RuntimeError("no cached original settings to restore")
         await self.write_settings(self._cached_original_settings)
 
+    async def set_cs_duration(self, minutes: int) -> None:
+        """Modify the CS (Ciclo Start / Start cycle) end_hour and end_minute so
+        the next pulse_send runs for `minutes` minutes. CS is the device's
+        on-board "Start button" cycle template — it governs how long a
+        pulse_send-triggered session runs. Other cycles untouched.
+        """
+        if not self.settings:
+            await self._ensure_session(STARTUP_HOLD_S, wait_for_g_imp=True)
+        if not self.settings:
+            raise RuntimeError("no settings observed yet")
+        cycles = self.settings["cycles"]
+        if "CS" not in cycles:
+            raise RuntimeError("CS cycle not in settings")
+        cs = dict(cycles["CS"])
+        cs["end_hour"] = minutes // 60
+        cs["end_minute"] = minutes % 60
+        new_settings = {**self.settings, "cycles": {**cycles, "CS": cs}}
+        await self.write_settings(new_settings)
+
     async def refresh_settings(self) -> None:
         """Open a session and re-handshake to force a fresh G_imp."""
         await self._ensure_session(REFRESH_HOLD_S)

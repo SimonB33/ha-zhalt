@@ -70,5 +70,8 @@ SERVICE_REFRESH = "refresh"
 SERVICE_DISABLE_CYCLES = "disable_all_cycles"
 SERVICE_RESTORE_CYCLES = "restore_cycles"
 SERVICE_LOG_CYCLES = "log_cycles"
+SERVICE_SET_CS_DURATION = "set_cs_duration"
+
+ATTR_MINUTES = "minutes"
 
 ATTR_DURATION = "duration"

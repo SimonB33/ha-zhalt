@@ -11,6 +11,7 @@ from homeassistant.helpers import config_validation as cv
 
 from .const import (
     ATTR_DURATION,
+    ATTR_MINUTES,
     CONF_HOST,
     CONF_PORT,
     DOMAIN,
@@ -20,6 +21,7 @@ from .const import (
     SERVICE_MIST,
     SERVICE_REFRESH,
     SERVICE_RESTORE_CYCLES,
+    SERVICE_SET_CS_DURATION,
     SERVICE_STOP,
 )
 from .coordinator import ZhaltCoordinator
@@ -28,6 +30,9 @@ _LOGGER = logging.getLogger(__name__)
 
 MIST_SCHEMA = vol.Schema(
     {vol.Required(ATTR_DURATION): vol.All(vol.Coerce(int), vol.Range(min=1, max=120))}
+)
+SET_CS_DURATION_SCHEMA = vol.Schema(
+    {vol.Required(ATTR_MINUTES): vol.All(vol.Coerce(int), vol.Range(min=1, max=120))}
 )
 EMPTY_SCHEMA = vol.Schema({})
 
@@ -68,6 +73,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             SERVICE_DISABLE_CYCLES,
             SERVICE_RESTORE_CYCLES,
             SERVICE_LOG_CYCLES,
+            SERVICE_SET_CS_DURATION,
         ):
             if hass.services.has_service(DOMAIN, svc):
                 hass.services.async_remove(DOMAIN, svc)
@@ -156,4 +162,16 @@ def _async_register_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_LOG_CYCLES, _handle_log_cycles, schema=EMPTY_SCHEMA
+    )
+
+    async def _handle_set_cs_duration(call: ServiceCall) -> None:
+        minutes = int(call.data[ATTR_MINUTES])
+        for coordinator in _all_coordinators(hass):
+            try:
+                await coordinator.set_cs_duration(minutes)
+            except RuntimeError as err:
+                raise HomeAssistantError(f"Zhalt device unreachable: {err}") from err
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_SET_CS_DURATION, _handle_set_cs_duration, schema=SET_CS_DURATION_SCHEMA
     )
