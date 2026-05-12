@@ -475,6 +475,22 @@ class ZhaltCoordinator(DataUpdateCoordinator[dict[str, Any] | None]):
         except Exception:  # noqa: BLE001
             _LOGGER.warning("failed to parse G_dat: %.120s", text)
             return
+        # v0.1.8 diagnostic: identify which G_dat field actually tracks "pump
+        # running" under Manual mode. operating_mode flips to Stopped (6) ~9s
+        # into a 70s manual mist while the device keeps spraying — so we need
+        # to find the real signal. Remove once parse_g_dat exposes is_pump_running.
+        _LOGGER.info(
+            "g_dat: op=%s sub=%s cyc_state=%s elapsed=%s remaining=%s "
+            "mist_done=%s stop_done=%s active_cycle=%s",
+            parsed.get("operating_mode"),
+            parsed.get("substate"),
+            parsed.get("cycle_state"),
+            parsed.get("elapsed_in_cycle"),
+            parsed.get("remaining_sec"),
+            parsed.get("mist_done"),
+            parsed.get("stop_done"),
+            parsed.get("active_cycle_id"),
+        )
         self.last_dat_at = dt_util.utcnow()
         self._maybe_warn_clock_drift(parsed)
         self.async_set_updated_data(parsed)
