@@ -50,12 +50,14 @@ CYCLE_MODE_NAMES = {1: "Direct", 2: "Pulse"}
 # cycle_state (G_dat token 45) — per-cycle state machine observed during
 # DIRECT and PULSE mists (Manual mode, 2026-05-12):
 #   0 = idle, no cycle in progress
-#   1 = phase 1: active high-pressure spray (concentrated pesticide). op=9.
-#       Lasts ~70-80% of configured duration (e.g. ~8s of a 10s PULSE,
-#       ~13s of a 70s DIRECT). elapsed_in_cycle counts at ~22 units/s.
-#   2 = phase 2: extended spray, likely mains-water diluted. op=6 ("Stopped")
-#       despite the pump still delivering visible spray. elapsed resets to 0.
-#       Lasts the remaining 20-30% of the configured duration.
+#   1 = phase 1: active spray. op=9. Lasts ~70-80% of configured duration
+#       (e.g. ~8s of a 10s PULSE, ~13s of a 70s DIRECT). elapsed_in_cycle
+#       counts at ~22 units/s (likely pump-pulse count, not seconds).
+#   2 = phase 2: continued spray. op=6 ("Stopped") despite continued visible
+#       output. elapsed resets to 0. Lasts the remaining 20-30% of duration.
+#       Mains water flows through both phases per V1 owner; the phase 1 / 2
+#       distinction is likely a pump-cadence or pressure-mode change, not a
+#       dilution change.
 #   3 = wind-down: cycle complete, no spray. op=7 (Standby). Brief transition.
 # is_pump_running is true when cycle_state in (1, 2) — see derived field below.
 PUMP_RUNNING_CYCLE_STATES = (1, 2)
