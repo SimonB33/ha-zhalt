@@ -16,7 +16,7 @@ mist:
 
 stop:
   name: Stop
-  description: Stop misting immediately. Note - the device will block manual mists for the rest of the day after a stop.
+  description: Stop the currently active mist or pulse program immediately. Same firmware signal as the physical STOP button. Does NOT day-block subsequent sprays (the integration uses stop_send routinely after every auto-stop without disabling further mists). The separate stopday_send action (not exposed here) is what blocks for the rest of the day.
 
 refresh:
   name: Refresh settings
