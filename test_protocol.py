@@ -29,7 +29,7 @@ import websockets
 from websockets.asyncio.client import ClientConnection, connect
 
 
-DEFAULT_HOST = "172.217.28.1"
+DEFAULT_HOST = "10.0.0.30"
 DEFAULT_PORT = 81
 POLL_INTERVAL_S = 1.5
 HANDSHAKE_TIMEOUT_S = 10.0

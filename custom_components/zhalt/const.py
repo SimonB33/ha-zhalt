@@ -4,7 +4,6 @@ from __future__ import annotations
 DOMAIN = "zhalt"
 PLATFORMS: list[str] = ["binary_sensor", "button", "sensor", "switch"]
 
-DEFAULT_HOST = "172.217.28.1"
 DEFAULT_PORT = 81
 DEFAULT_NAME = "Zhalt Evolution Connect"
 
