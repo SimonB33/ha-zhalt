@@ -12,6 +12,7 @@
 #include "app.h"
 #include "eventlog.h"
 #include "executor.h"
+#include "mqtt.h"
 #include "net.h"
 #include "passthrough.h"
 #include "store.h"
@@ -22,12 +23,14 @@ void setup() {
   store::begin();
   net::begin();
   appInit();
+  mqtt::begin();
   passthrough::begin();
   executorStart();
   elog::add("boot fw %s", ZB_FW_VERSION);
 }
 
 void loop() {
+  mqtt::loop();
   static uint32_t lastTick = 0;
   passthrough::poll();
   if (millis() - lastTick >= 1000) {
@@ -36,6 +39,7 @@ void loop() {
   }
   if (app.rebootRequested && !app.busy) {
     delay(300);
+    mqtt::publishOffline();
     ESP.restart();
   }
   delay(5);
