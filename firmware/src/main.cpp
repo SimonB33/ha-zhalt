@@ -18,11 +18,19 @@
 #include "store.h"
 #include "version.h"
 
+static void safetyTask(void*) {
+  for (;;) {
+    appTickSafety();
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   store::begin();
   net::begin();
   appInit();
+  xTaskCreatePinnedToCore(safetyTask, "safety", 6144, nullptr, 2, nullptr, 1);
   mqtt::begin();
   passthrough::begin();
   executorStart();
@@ -31,12 +39,7 @@ void setup() {
 
 void loop() {
   mqtt::loop();
-  static uint32_t lastTick = 0;
   passthrough::poll();
-  if (millis() - lastTick >= 1000) {
-    lastTick = millis();
-    appTickSafety();
-  }
   if (app.rebootRequested && !app.busy) {
     delay(300);
     mqtt::publishOffline();

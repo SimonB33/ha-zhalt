@@ -39,6 +39,7 @@ void mqtt::begin() {
   s_mqtt.setServer(MQTT_HOST, MQTT_PORT);
   s_mqtt.setBufferSize(2048);
   s_mqtt.setKeepAlive(30);
+  s_mqtt.setSocketTimeout(3);
   s_mqtt.setCallback(onMessage);
 }
 
@@ -50,9 +51,10 @@ void mqtt::loop() {
   if (!net::ethUp()) return;
   if (!s_mqtt.connected()) {
     if (millis() - s_lastAttempt < 5000) return;
-    s_lastAttempt = millis();
     String id = "zhalt-bridge-" + net::mac();
-    if (!s_mqtt.connect(id.c_str(), MQTT_USER, MQTT_PASS, z::kTopicStatus, 1, true, "offline")) {
+    bool ok = s_mqtt.connect(id.c_str(), MQTT_USER, MQTT_PASS, z::kTopicStatus, 1, true, "offline");
+    s_lastAttempt = millis();  // back-off starts after the attempt returns
+    if (!ok) {
       elog::add("mqtt connect failed rc=%d", s_mqtt.state());
       return;
     }
@@ -60,7 +62,8 @@ void mqtt::loop() {
     // A retained command would replay on every reconnect: clear it before subscribing.
     s_mqtt.publish(z::kTopicCmd, "", true);
     for (const auto& m : z::discoveryMessages(net::mac().c_str(), ZB_FW_VERSION, net::ethIp().c_str()))
-      s_mqtt.publish(m.topic.c_str(), m.payload.c_str(), true);
+      if (!s_mqtt.publish(m.topic.c_str(), m.payload.c_str(), true))
+        elog::add("discovery publish failed: %s", m.topic.c_str());
     s_mqtt.subscribe(z::kTopicCmd, 1);
     s_mqtt.subscribe(z::kTopicConfig, 1);
     elog::add("mqtt connected");
@@ -69,7 +72,11 @@ void mqtt::loop() {
   s_mqtt.loop();
   if (app.dirty.exchange(false) || millis() - s_lastPublish > 60000) {
     std::string js = appStateJson();
-    s_mqtt.publish(z::kTopicState, js.c_str(), true);
-    s_lastPublish = millis();
+    if (s_mqtt.publish(z::kTopicState, js.c_str(), true)) {
+      s_lastPublish = millis();
+    } else {
+      elog::add("state publish failed");
+      app.dirty = true;
+    }
   }
 }
