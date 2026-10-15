@@ -78,7 +78,8 @@ already queued.
 3. **Blackout windows:** the board holds HA's three windows (morning 1, morning 2, evening). It refuses to
    start a mist or pulse session inside a window, and if a pulse session is running when a window starts
    it queues a `stop` at the window start. If at least 10 min of the session's cap remain when the window
-   ends, it re-starts the pulse session with the remaining time. If not, the session is over.
+   ends, it re-starts the pulse session with the remaining time. If not, the session is over. The 10 min
+   threshold is a default, set from HA (`input_number.zhalt_blackout_resume_min_minutes`).
 4. **Stop retries:** a failed stop is retried 3 times, 20 s apart. After the third failure the board
    publishes state `stop_failed`; HA then cuts mains at the Shelly (§5).
 5. **Persistence:** the session end time, blackout windows and last results live in NVS, so a reboot
@@ -125,6 +126,10 @@ Existing helpers become the source for the board's settings:
 | `input_number.zhalt_long_blast_seconds` (70) | Mist duration in `zhalt/config` and in mist commands |
 | `input_number.zhalt_morning_pulse_minutes` / `_evening_` | `minutes` in pulse commands, i.e. the cap. Morning set to 40 at cut-over |
 | `input_datetime.zhalt_blackout_{morning1,morning2,evening}_{start,end}` | Blackout windows in `zhalt/config` |
+| **New** `input_number.zhalt_blackout_resume_min_minutes` (10) | Resume threshold in `zhalt/config` |
+
+All timings above are defaults and can be changed later from the dashboard without new firmware. The only
+fixed value is the 120 s mist cap.
 
 Scripts keep their names, so every dashboard button that calls them keeps working:
 - `script.zhalt_safe_mist`: same gates (wind, rain, skip flags, blackout, spray block). The PoE, ping and
