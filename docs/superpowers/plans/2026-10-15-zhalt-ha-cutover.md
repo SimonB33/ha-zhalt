@@ -237,13 +237,14 @@ actions:
 
 | Spray | Days | Now: trigger → real spray | Proposed trigger = real spray | Length |
 |---|---|---|---|---|
-| Car-wash mist | Tue, Sat | 05:46 → 05:50 | **05:50** | 70 s (`zhalt_long_blast_seconds`) |
-| Morning pulse session | Mon, Wed, Thu, Fri, Sun | sunrise−34 → sunrise−30 (05:47 today) | **sunrise−30** | **40 min** (now 60). The board pauses 05:55–06:15 and resumes, ending about 06:47, before the 06:55 mist. With 60 min it ran into the 06:55 mist and the 07:00 blackout. |
-| Morning mist | Mon, Wed, Thu, Fri, Sun | 06:51 → 06:55 | **06:55** | 70 s |
+| Car-wash mist | **Tue, Thu, Sat** (was Tue, Sat) | 05:46 → 05:50 | **05:50** | 70 s (`zhalt_long_blast_seconds`) |
+| Morning pulse session | **Sun, Mon, Wed, Fri** | sunrise−34 → sunrise−30 (05:47 today) | **sunrise−30** | **40 min** (now 60). The board pauses 05:55–06:15 and resumes, ending about 06:47, before the 06:55 mist. With 60 min it ran into the 06:55 mist and the 07:00 blackout. |
+| Morning mist | **Sun, Mon, Wed, Fri** | 06:51 → 06:55 | **06:55** | 70 s |
 | Evening mist | daily | 18:26 → 18:30 | **18:30** (the evening blackout ends 18:30, exclusive) | 70 s |
 | Evening pulse session | daily | 18:56 → 19:00 | **19:00** | 90 min (the board's max) |
 
 **Files (HA objects):**
+- Car wash moves to **Tue, Thu, Sat** (Simon, 2026-10-15). Change the weekday condition in `zhalt_car_wash_morning_mist` to tue/thu/sat; in `zhalt_morning_mist` and `zhalt_morning_pulse_session` to sun/mon/wed/fri; in the failure-detection weekday map and the `sensor.zhalt_next_spray` car-wash test to match. The garage lights (`automation.garage_lights_tue_sat_on_off`) were already moved to Tue/Thu/Sat on 2026-10-15.
 - Modify: `automation.zhalt_car_wash_morning_mist` (05:50), `automation.zhalt_morning_mist` (06:55), `automation.zhalt_evening_blast` (18:30)
 - Modify: `automation.zhalt_pulse_times_sun_track`:
   - morning = sunrise − 30, still pushed past a blackout end + 5 min
