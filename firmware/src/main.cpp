@@ -17,6 +17,7 @@
 #include "passthrough.h"
 #include "store.h"
 #include "version.h"
+#include "web.h"
 
 static void safetyTask(void*) {
   for (;;) {
@@ -29,6 +30,7 @@ void setup() {
   Serial.begin(115200);
   store::begin();
   net::begin();
+  web::begin();
   appInit();
   xTaskCreatePinnedToCore(safetyTask, "safety", 6144, nullptr, 2, nullptr, 1);
   mqtt::begin();

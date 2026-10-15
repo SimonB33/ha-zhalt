@@ -1,6 +1,81 @@
 #include "passthrough.h"
 
-void passthrough::begin() {}
-void passthrough::poll() {}
-void passthrough::run() {}
-bool passthrough::active() { return false; }
+#include <Arduino.h>
+#include <WiFi.h>
+
+#include <atomic>
+
+#include "app.h"
+#include "eventlog.h"
+#include "net.h"
+#include "session.h"
+
+static WiFiServer s_server(81);
+static WiFiClient s_pending;
+static std::atomic<bool> s_hasPending{false}, s_active{false};
+static constexpr uint32_t kIdleLimitMs = 10 * 60 * 1000;
+
+void passthrough::begin() { s_server.begin(); }
+
+bool passthrough::active() { return s_active; }
+
+void passthrough::poll() {
+  WiFiClient c = s_server.accept();
+  if (!c) return;
+  if (s_hasPending || s_active) {
+    c.stop();  // one client at a time, like the unit itself
+    return;
+  }
+  s_pending = c;
+  s_hasPending = true;
+  z::Job j;
+  j.type = z::JobType::Passthrough;
+  bool queued;
+  {
+    std::lock_guard<std::mutex> l(app.mu);
+    queued = app.queue.push(j);
+  }
+  if (!queued) {
+    s_pending.stop();
+    s_hasPending = false;
+  }
+}
+
+void passthrough::run() {
+  WiFiClient lan = s_pending;
+  s_hasPending = false;
+  s_active = true;
+  app.dirty = true;
+  elog::add("passthrough start");
+  int rssi = 0;
+  uint32_t ms = 0;
+  bool joined = net::joinZhalt(session::kJoinTimeoutMs, rssi, ms);
+  appRecordJoin(joined, rssi, ms);
+  WiFiClient unit;
+  if (joined && unit.connect(IPAddress(172, 217, 28, 1), 81, 5000)) {
+    uint8_t buf[512];
+    uint32_t lastIo = millis();
+    while (lan.connected() && unit.connected() && !app.preempt && millis() - lastIo < kIdleLimitMs) {
+      int n;
+      while ((n = lan.available()) > 0) {
+        n = lan.read(buf, n > 512 ? 512 : n);
+        unit.write(buf, n);
+        lastIo = millis();
+      }
+      while ((n = unit.available()) > 0) {
+        n = unit.read(buf, n > 512 ? 512 : n);
+        lan.write(buf, n);
+        lastIo = millis();
+      }
+      delay(2);
+    }
+  } else {
+    elog::add("passthrough: unit not reachable");
+  }
+  unit.stop();
+  lan.stop();
+  net::leaveZhalt();
+  s_active = false;
+  app.dirty = true;
+  elog::add("passthrough end");
+}
