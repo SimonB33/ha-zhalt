@@ -52,6 +52,7 @@ class Conversation {
   void poll(uint32_t nowMs, Action a);
   void onDat(const Dat& d, uint32_t nowMs);
   Action goalAction() const;
+  bool holdClear(uint32_t nowMs) const;
 
   Goal goal_;
   Phase phase_ = Phase::WaitConnect;
@@ -61,8 +62,10 @@ class Conversation {
   Settings settings_;
   Dat dat_;
   uint32_t phaseStartMs_ = 0, lastPollMs_ = 0, sprayStartMs_ = 0, lastStopSendMs_ = 0;
+  uint32_t actSentMs_ = 0;  // when the Mist/Pulse start flag was sent
   uint32_t mistMs_ = 70000;
   bool stopRequested_ = false, started_ = false, schedOn_ = false, rehandshook_ = false;
+  bool holdStart_ = false;  // stop sent while a start was pending, spray not yet seen
   const Settings* restoreFrom_ = nullptr;
   int idleDats_ = 0, datsSinceAct_ = 0;
 };

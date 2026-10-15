@@ -144,7 +144,7 @@ void test_stop_confirms_after_two_idle() {
 
 void test_stop_resends_then_fails() {
   Conversation c(Goal::Stop);
-  open(c);  // stop sent at 110
+  open(c);  // stop sent at 10, on CiaO
   c.takeOutgoing();
   c.onTick(10110, kClock);
   TEST_ASSERT_TRUE(has(c.takeOutgoing(), kPollStop));
@@ -205,6 +205,56 @@ void test_test_pump() {
   TEST_ASSERT_TRUE(c.status() == St::Done);
 }
 
+void test_stop_requested_before_act_never_starts() {
+  Conversation c(Goal::Mist);
+  c.onConnected(0);
+  c.onFrame("CiaO", 10, kClock);
+  c.requestStop();
+  c.onFrame(kGImp, 110, kClock);
+  auto out = c.takeOutgoing();
+  TEST_ASSERT_FALSE(has(out, kPollMist));
+  TEST_ASSERT_TRUE(c.status() == St::Done);
+  TEST_ASSERT_FALSE(c.started());
+}
+
+void test_stop_during_pending_start_holds_for_start_window() {
+  Conversation c(Goal::Mist);
+  open(c);  // start sent at 110
+  c.requestStop();
+  c.onTick(200, kClock);
+  TEST_ASSERT_TRUE(has(c.takeOutgoing(), kPollStop));
+  c.onFrame(kGDatStandby, 1700, kClock);
+  c.onFrame(kGDatStandby, 3200, kClock);
+  TEST_ASSERT_TRUE(c.status() == St::Running);
+  c.onFrame(kGDatMisting, 16000, kClock);
+  TEST_ASSERT_TRUE(c.status() == St::Running);
+  c.onFrame(kGDatStandby, 30200, kClock);
+  c.onFrame(kGDatStandby, 31700, kClock);
+  TEST_ASSERT_TRUE(c.status() == St::Done);
+}
+
+void test_stop_goal_sends_stop_right_after_handshake() {
+  Conversation c(Goal::Stop);
+  c.onConnected(0);
+  c.onFrame("CiaO", 10, kClock);
+  auto out = c.takeOutgoing();
+  TEST_ASSERT_TRUE(has(out, kHandshake));
+  TEST_ASSERT_TRUE(has(out, kPollStop));
+}
+
+void test_pending_start_stop_fails_after_extended_deadline() {
+  Conversation c(Goal::Mist);
+  open(c);  // start sent at 110
+  c.requestStop();
+  c.onTick(200, kClock);
+  c.takeOutgoing();
+  c.onTick(110 + 30000 + 25000 - 1, kClock);
+  TEST_ASSERT_TRUE(c.status() == St::Running);
+  c.onTick(110 + 30000 + 25000, kClock);
+  TEST_ASSERT_TRUE(c.status() == St::Failed);
+  TEST_ASSERT_EQUAL_STRING("stop_not_confirmed", c.error().c_str());
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_refresh_happy_path);
@@ -223,5 +273,9 @@ int main() {
   RUN_TEST(test_scheduler_on_restores_cached);
   RUN_TEST(test_scheduler_on_without_cache_fails);
   RUN_TEST(test_test_pump);
+  RUN_TEST(test_stop_requested_before_act_never_starts);
+  RUN_TEST(test_stop_during_pending_start_holds_for_start_window);
+  RUN_TEST(test_stop_goal_sends_stop_right_after_handshake);
+  RUN_TEST(test_pending_start_stop_fails_after_extended_deadline);
   return UNITY_END();
 }

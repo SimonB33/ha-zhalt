@@ -55,7 +55,12 @@ Action Conversation::goalAction() const {
   }
 }
 
+bool Conversation::holdClear(uint32_t nowMs) const {
+  return !holdStart_ || nowMs - actSentMs_ >= kStartVerifyMs;
+}
+
 void Conversation::beginStop(uint32_t nowMs) {
+  holdStart_ = (phase_ == Phase::VerifyStart);  // start flag already sent, spray not seen
   poll(nowMs, Action::Stop);
   lastStopSendMs_ = nowMs;
   phase_ = Phase::VerifyStop;
@@ -82,7 +87,12 @@ void Conversation::enterAct(uint32_t nowMs, const LocalDateTime& clock) {
       return;
     case Goal::Mist:
     case Goal::Pulse:
+      if (stopRequested_) {  // stop asked before the start was sent: never start
+        finish();
+        return;
+      }
       phase_ = Phase::VerifyStart;
+      actSentMs_ = nowMs;
       poll(nowMs, goalAction());
       return;
     case Goal::Scheduler: {
@@ -112,6 +122,7 @@ void Conversation::onFrame(const std::string& text, uint32_t nowMs, const LocalD
       phase_ = Phase::WaitImp;
       phaseStartMs_ = nowMs;
       lastPollMs_ = nowMs;
+      if (goal_ == Goal::Stop) enterAct(nowMs, clock);  // stop does not wait for G_imp
     }
     return;
   }
@@ -157,7 +168,11 @@ void Conversation::onDat(const Dat& d, uint32_t nowMs) {
     case Phase::Running:
     case Phase::VerifyStop:
       idleDats_ = d.spraying() ? 0 : idleDats_ + 1;
-      if (idleDats_ >= kIdleDatsForStop) finish();
+      if (d.spraying() && holdStart_) {  // the pending start has now shown up
+        holdStart_ = false;
+        started_ = true;
+      }
+      if (idleDats_ >= kIdleDatsForStop && holdClear(nowMs)) finish();
       return;
     default:
       return;
@@ -207,8 +222,11 @@ void Conversation::onTick(uint32_t nowMs, const LocalDateTime& clock) {
       }
       if (pollDue) poll(nowMs, Action::None);
       return;
-    case Phase::VerifyStop:
-      if (inPhase >= kStopVerifyMs) {
+    case Phase::VerifyStop: {
+      // While a pending start may still spray, the deadline runs from the end of the start window.
+      bool overdue = holdStart_ ? (holdClear(nowMs) && nowMs - (actSentMs_ + kStartVerifyMs) >= kStopVerifyMs)
+                                : inPhase >= kStopVerifyMs;
+      if (overdue) {
         fail("stop_not_confirmed");
         return;
       }
@@ -219,6 +237,7 @@ void Conversation::onTick(uint32_t nowMs, const LocalDateTime& clock) {
       }
       if (pollDue) poll(nowMs, Action::None);
       return;
+    }
     case Phase::VerifySettings:
       if (inPhase >= kSettingsVerifyMs) {
         fail("settings_not_confirmed");
