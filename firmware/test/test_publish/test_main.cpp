@@ -117,6 +117,9 @@ void test_discovery_scheduler_switch() {
   JsonDocument d = findPayload(msgs, "homeassistant/switch/zhalt_aabbcc/onboard_scheduler/config");
   TEST_ASSERT_EQUAL_STRING("switch.zhalt_mqtt_onboard_scheduler", d["default_entity_id"].as<const char*>());
   TEST_ASSERT_EQUAL_STRING("{\"action\":\"scheduler\",\"on\":false}", d["payload_off"].as<const char*>());
+  // HA compares the rendered state with state_on/state_off, which default to the payloads.
+  TEST_ASSERT_EQUAL_STRING("ON", d["state_on"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("OFF", d["state_off"].as<const char*>());
 }
 
 void test_discovery_bridge_device_first() {

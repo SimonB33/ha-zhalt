@@ -210,6 +210,8 @@ std::vector<DiscoveryMsg> discoveryMessages(const std::string& mac, const std::s
     doc["command_topic"] = kTopicCmd;
     doc["payload_on"] = R"({"action":"scheduler","on":true})";
     doc["payload_off"] = R"({"action":"scheduler","on":false})";
+    doc["state_on"] = "ON";
+    doc["state_off"] = "OFF";
     doc["state_topic"] = kTopicState;
     doc["value_template"] =
         "{% if value_json.scheduler_on is none %}None{% elif value_json.scheduler_on %}ON{% else %}OFF{% endif %}";
