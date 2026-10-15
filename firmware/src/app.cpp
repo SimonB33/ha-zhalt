@@ -75,6 +75,7 @@ void appSubmit(const z::Command& c) {
     case CmdType::TestJoin: j.type = JobType::TestJoin; break;
     case CmdType::Invalid: return;
   }
+  if (j.type == JobType::Mist || j.type == JobType::Pulse) j.enqueuedMs = millis();
   if (!app.queue.push(j)) {
     app.snap.lastResult = "queue_full";
     elog::add("queue full, command dropped");

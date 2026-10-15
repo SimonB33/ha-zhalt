@@ -140,11 +140,11 @@ bool parseCommand(const std::string& json, Command& out, std::string& err) {
     err = std::string("unknown action: ") + action;
     return false;
   }
-  if (!doc["seconds"].isNull() && !readInt(doc["seconds"], c.seconds)) {
+  if (c.type == CmdType::Mist && !doc["seconds"].isNull() && !readInt(doc["seconds"], c.seconds)) {
     err = "seconds must be a number";
     return false;
   }
-  if (!doc["minutes"].isNull() && !readInt(doc["minutes"], c.minutes)) {
+  if (c.type == CmdType::Pulse && !doc["minutes"].isNull() && !readInt(doc["minutes"], c.minutes)) {
     err = "minutes must be a number";
     return false;
   }

@@ -16,7 +16,8 @@
 
 static WiFiClient s_net;
 static PubSubClient s_mqtt(s_net);
-static uint32_t s_lastAttempt = 0, s_lastPublish = 0;
+static uint32_t s_lastAttempt = 0, s_lastPublish = 0, s_lastPubFail = 0;
+static bool s_pubFailLogged = false;
 
 static void onMessage(char* topic, uint8_t* payload, unsigned int len) {
   std::string body(reinterpret_cast<char*>(payload), len);
@@ -70,12 +71,17 @@ void mqtt::loop() {
     app.dirty = true;
   }
   s_mqtt.loop();
-  if (app.dirty.exchange(false) || millis() - s_lastPublish > 60000) {
+  bool backingOff = s_lastPubFail != 0 && millis() - s_lastPubFail < 5000;
+  if (!backingOff && (app.dirty.exchange(false) || millis() - s_lastPublish > 60000)) {
     std::string js = appStateJson();
     if (s_mqtt.publish(z::kTopicState, js.c_str(), true)) {
       s_lastPublish = millis();
+      s_lastPubFail = 0;
+      s_pubFailLogged = false;
     } else {
-      elog::add("state publish failed");
+      if (!s_pubFailLogged) elog::add("state publish failed");
+      s_pubFailLogged = true;
+      s_lastPubFail = millis() ? millis() : 1;
       app.dirty = true;
     }
   }

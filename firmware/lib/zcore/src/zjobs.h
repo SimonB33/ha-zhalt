@@ -1,6 +1,7 @@
 // zjobs.h
 #pragma once
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 
 namespace z {
@@ -12,6 +13,7 @@ struct Job {
   int seconds = 0;
   int minutes = 0;
   bool on = false;
+  uint32_t enqueuedMs = 0;  // millis() at submit; queued starts expire
   bool resume = false;  // pulse restarted after a blackout: minutes are not clamped
 };
 

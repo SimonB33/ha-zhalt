@@ -142,6 +142,17 @@ void test_parse_commands_rejects() {
   TEST_ASSERT_FALSE(parseCommand(R"(["mist"])", c, err));
 }
 
+void test_stop_ignores_stray_fields() {
+  Command c;
+  std::string err;
+  TEST_ASSERT_TRUE(parseCommand(R"({"action":"stop","seconds":"x"})", c, err));
+  TEST_ASSERT_TRUE(c.type == CmdType::Stop);
+  TEST_ASSERT_TRUE(parseCommand(R"({"action":"stop","minutes":[1]})", c, err));
+  TEST_ASSERT_TRUE(c.type == CmdType::Stop);
+  TEST_ASSERT_FALSE(parseCommand(R"({"action":"mist","seconds":"x"})", c, err));
+  TEST_ASSERT_FALSE(parseCommand(R"({"action":"pulse","minutes":"x"})", c, err));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_defaults);
@@ -154,5 +165,6 @@ int main() {
   RUN_TEST(test_config_json_round_trip);
   RUN_TEST(test_parse_commands);
   RUN_TEST(test_parse_commands_rejects);
+  RUN_TEST(test_stop_ignores_stray_fields);
   return UNITY_END();
 }

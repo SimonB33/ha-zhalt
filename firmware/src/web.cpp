@@ -11,6 +11,12 @@
 #include "secrets.h"
 #include "zconfig.h"
 
+// Refuse to build with the placeholder web password.
+static constexpr bool sameStr(const char* a, const char* b) {
+  return *a == *b && (*a == '\0' || sameStr(a + 1, b + 1));
+}
+static_assert(!sameStr(WEB_PASS, "change-me"), "set WEB_PASS in include/secrets.h (still the default)");
+
 static AsyncWebServer s_server(80);
 
 static std::string esc(const std::string& s) {
@@ -103,6 +109,8 @@ void web::begin() {
           return;
         }
         bool ok = s_updateOk;
+        s_updateSeen = false;
+        s_updateOk = false;
         r->send(ok ? 200 : 500, "text/plain", ok ? "ok, rebooting when idle" : "update failed");
         if (ok) app.rebootRequested = true;
       },

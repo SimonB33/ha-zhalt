@@ -75,6 +75,16 @@ void test_job_fields_carried() {
   TEST_ASSERT_TRUE(out.resume);
 }
 
+void test_enqueued_ms_carried() {
+  JobQueue q;
+  Job j = J(JobType::Mist);
+  j.enqueuedMs = 123456u;
+  q.push(j);
+  Job out;
+  TEST_ASSERT_TRUE(q.pop(out));
+  TEST_ASSERT_EQUAL_UINT32(123456u, out.enqueuedMs);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_fifo);
@@ -83,5 +93,6 @@ int main() {
   RUN_TEST(test_duplicate_stop_collapses);
   RUN_TEST(test_full_queue_rejects_but_stop_still_fits);
   RUN_TEST(test_job_fields_carried);
+  RUN_TEST(test_enqueued_ms_carried);
   return UNITY_END();
 }

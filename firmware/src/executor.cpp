@@ -96,7 +96,7 @@ static void runConversation(const z::Job& job) {
   z::Settings cached;
   {
     std::lock_guard<std::mutex> l(app.mu);
-    if (job.type == JobType::Mist || job.type == JobType::Pulse) {
+    if (job.type == JobType::Mist || job.type == JobType::Pulse || job.type == JobType::TestPump) {
       z::Gate g = app.safety.canStart(net::now(), net::clockValid());
       if (g != z::Gate::Ok) {
         app.snap.lastResult = gateResult(g);
@@ -108,11 +108,14 @@ static void runConversation(const z::Job& job) {
     }
     if (job.type == JobType::Mist) {
       secs = app.safety.clampMistSeconds(job.seconds);
+      if (job.seconds != 0 && secs != job.seconds) elog::add("mist %d s clamped to %d s", job.seconds, secs);
       conv.setMistDurationMs(uint32_t(secs) * 1000);
       timeoutMs = uint32_t(secs) * 1000 + 90000;
     }
     if (job.type == JobType::Pulse) {
       minutes = job.resume ? std::max(1, job.minutes) : app.safety.clampPulseMinutes(job.minutes);
+      if (!job.resume && job.minutes != 0 && minutes != job.minutes)
+        elog::add("pulse %d min clamped to %d min", job.minutes, minutes);
       timeoutMs = 90000;
     }
     if (job.type == JobType::Stop) timeoutMs = 60000;
@@ -187,6 +190,11 @@ static void runConversation(const z::Job& job) {
           std::lock_guard<std::mutex> l(app.mu);
           app.safety.onPulseStarted(now, minutes);
         }
+        if (stopAsked) {
+          // Confirmed in the same instant it was cancelled: the unit may be pulsing.
+          std::lock_guard<std::mutex> l(app.mu);
+          app.safety.requestStop(now);
+        }
         recordMist("pulse");
         appSetResult(stopAsked ? "cancelled" : "ok");
       } else {
@@ -212,7 +220,16 @@ static void runConversation(const z::Job& job) {
     default:
       appSetResult(done ? "ok" : err);
   }
-  if (tracked) store::put("inflight", "");
+  if (tracked) {
+    // Persist the new Safety state before clearing the marker (mirrors appInit).
+    {
+      std::lock_guard<std::mutex> l(app.mu);
+      std::string s = app.safety.serialize();
+      store::put("safety", s);
+      app.savedSafety = s;
+    }
+    store::put("inflight", "");
+  }
   elog::add("job %s -> %s", jobName(job.type), done ? "ok" : err.c_str());
 }
 
@@ -247,6 +264,12 @@ static void executorTask(void*) {
       vTaskDelay(pdMS_TO_TICKS(100));
       continue;
     }
+    if ((job.type == JobType::Mist || job.type == JobType::Pulse) && !job.resume &&
+        millis() - job.enqueuedMs > 60000) {
+      elog::add("%s expired in queue", jobName(job.type));
+      appSetResult("expired");
+      continue;
+    }
     if (job.type == JobType::Stop) app.preempt = false;
     app.busy = true;
     app.dirty = true;
@@ -256,4 +279,10 @@ static void executorTask(void*) {
   }
 }
 
-void executorStart() { xTaskCreatePinnedToCore(executorTask, "executor", 12288, nullptr, 1, nullptr, 1); }
+void executorStart() {
+  if (xTaskCreatePinnedToCore(executorTask, "executor", 12288, nullptr, 1, nullptr, 1) != pdPASS) {
+    elog::add("task create failed: executor");
+    delay(1000);
+    ESP.restart();
+  }
+}
