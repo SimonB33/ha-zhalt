@@ -9,23 +9,34 @@
 #include <WebSocketsClient.h>
 #include <WiFi.h>
 
+#include "app.h"
 #include "eventlog.h"
+#include "executor.h"
 #include "net.h"
+#include "passthrough.h"
 #include "store.h"
+#include "version.h"
 
 void setup() {
   Serial.begin(115200);
   store::begin();
   net::begin();
-  elog::add("boot");
+  appInit();
+  passthrough::begin();
+  executorStart();
+  elog::add("boot fw %s", ZB_FW_VERSION);
 }
 
 void loop() {
-  static uint32_t last = 0;
-  if (millis() - last > 10000) {
-    last = millis();
-    elog::add("eth=%d ip=%s clock=%d mac=%s", net::ethUp(), net::ethIp().c_str(), net::clockValid(),
-              net::mac().c_str());
+  static uint32_t lastTick = 0;
+  passthrough::poll();
+  if (millis() - lastTick >= 1000) {
+    lastTick = millis();
+    appTickSafety();
   }
-  delay(10);
+  if (app.rebootRequested && !app.busy) {
+    delay(300);
+    ESP.restart();
+  }
+  delay(5);
 }
