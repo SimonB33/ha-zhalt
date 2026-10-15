@@ -7,6 +7,7 @@
 
 #include "app.h"
 #include "eventlog.h"
+#include "net.h"
 #include "secrets.h"
 #include "zconfig.h"
 
@@ -23,7 +24,20 @@ static std::string esc(const std::string& s) {
   return o;
 }
 
+static bool s_updateOk = false, s_updateSeen = false;
+
+static bool sameOrigin(AsyncWebServerRequest* r) {
+  String base = "http://" + net::ethIp();
+  if (r->hasHeader("Origin")) return r->getHeader("Origin")->value() == base;
+  if (r->hasHeader("Referer")) return r->getHeader("Referer")->value().startsWith(base + "/");
+  return true;  // no browser headers (curl)
+}
+
 static bool authed(AsyncWebServerRequest* r) {
+  if (!sameOrigin(r)) {
+    r->send(403, "text/plain", "forbidden");
+    return false;
+  }
   if (r->authenticate(WEB_USER, WEB_PASS)) return true;
   r->requestAuthentication();
   return false;
@@ -84,19 +98,39 @@ void web::begin() {
       "/update", HTTP_POST,
       [](AsyncWebServerRequest* r) {
         if (!authed(r)) return;
-        bool ok = !Update.hasError();
+        if (!s_updateSeen) {
+          r->send(400, "text/plain", "no firmware");
+          return;
+        }
+        bool ok = s_updateOk;
         r->send(ok ? 200 : 500, "text/plain", ok ? "ok, rebooting when idle" : "update failed");
         if (ok) app.rebootRequested = true;
       },
       [](AsyncWebServerRequest* r, const String& filename, size_t index, uint8_t* data, size_t len, bool final) {
-        if (!r->authenticate(WEB_USER, WEB_PASS)) return;
+        if (!sameOrigin(r) || !r->authenticate(WEB_USER, WEB_PASS)) return;
         if (index == 0) {
+          if (Update.isRunning()) Update.abort();
+          s_updateSeen = true;
+          s_updateOk = false;
+          r->onDisconnect([] {
+            if (Update.isRunning()) Update.abort();
+          });
           elog::add("firmware upload %s", filename.c_str());
-          if (!Update.begin(UPDATE_SIZE_UNKNOWN)) elog::add("update begin failed");
+          if (Update.begin(UPDATE_SIZE_UNKNOWN))
+            s_updateOk = true;
+          else
+            elog::add("update begin failed");
         }
-        if (Update.isRunning() && Update.write(data, len) != len) elog::add("update write failed");
+        if (!s_updateOk) return;
+        if (Update.isRunning() && Update.write(data, len) != len) {
+          elog::add("update write failed");
+          Update.abort();
+          s_updateOk = false;
+          return;
+        }
         if (final) {
-          if (Update.end(true))
+          s_updateOk = Update.end(true);
+          if (s_updateOk)
             elog::add("update ok, %u bytes", unsigned(index + len));
           else
             elog::add("update end failed");
