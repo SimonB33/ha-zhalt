@@ -166,27 +166,41 @@ std::vector<DiscoveryMsg> discoveryMessages(const std::string& mac, const std::s
     out.push_back(m);
   };
 
-  for (const Def& d : kDefs) {
+  // Bridge device first, so the unit's via_device exists when HA reads the unit entities.
+  {
     JsonDocument doc;
-    base(doc, d.component, d.key, d.name, d.bridge);
-    doc["availability_topic"] = kTopicStatus;
-    if (d.press) {
-      doc["command_topic"] = kTopicCmd;
-      doc["payload_press"] = d.press;
+    base(doc, "binary_sensor", "online", "Bridge online", true);
+    doc["state_topic"] = kTopicStatus;
+    doc["payload_on"] = "online";
+    doc["payload_off"] = "offline";
+    doc["device_class"] = "connectivity";
+    emit("binary_sensor", "online", doc);
+  }
+
+  for (const bool bridgePass : {true, false}) {
+    for (const Def& d : kDefs) {
+      if (d.bridge != bridgePass) continue;
+      JsonDocument doc;
+      base(doc, d.component, d.key, d.name, d.bridge);
+      doc["availability_topic"] = kTopicStatus;
+      if (d.press) {
+        doc["command_topic"] = kTopicCmd;
+        doc["payload_press"] = d.press;
+      }
+      if (d.tmpl) {
+        doc["state_topic"] = kTopicState;
+        doc["value_template"] = d.tmpl;
+      }
+      if (d.devClass) doc["device_class"] = d.devClass;
+      if (d.unit) doc["unit_of_measurement"] = d.unit;
+      if (d.icon) doc["icon"] = d.icon;
+      if (d.diag) doc["entity_category"] = "diagnostic";
+      if (std::strcmp(d.key, "last_mist") == 0) {
+        doc["json_attributes_topic"] = kTopicState;
+        doc["json_attributes_template"] = "{{ {'kind': value_json.last_mist_kind} | tojson }}";
+      }
+      emit(d.component, d.key, doc);
     }
-    if (d.tmpl) {
-      doc["state_topic"] = kTopicState;
-      doc["value_template"] = d.tmpl;
-    }
-    if (d.devClass) doc["device_class"] = d.devClass;
-    if (d.unit) doc["unit_of_measurement"] = d.unit;
-    if (d.icon) doc["icon"] = d.icon;
-    if (d.diag) doc["entity_category"] = "diagnostic";
-    if (std::strcmp(d.key, "last_mist") == 0) {
-      doc["json_attributes_topic"] = kTopicState;
-      doc["json_attributes_template"] = "{{ {'kind': value_json.last_mist_kind} | tojson }}";
-    }
-    emit(d.component, d.key, doc);
   }
 
   {
@@ -201,15 +215,6 @@ std::vector<DiscoveryMsg> discoveryMessages(const std::string& mac, const std::s
         "{% if value_json.scheduler_on is none %}None{% elif value_json.scheduler_on %}ON{% else %}OFF{% endif %}";
     doc["icon"] = "mdi:calendar-clock";
     emit("switch", "onboard_scheduler", doc);
-  }
-  {
-    JsonDocument doc;
-    base(doc, "binary_sensor", "online", "Bridge online", true);
-    doc["state_topic"] = kTopicStatus;
-    doc["payload_on"] = "online";
-    doc["payload_off"] = "offline";
-    doc["device_class"] = "connectivity";
-    emit("binary_sensor", "online", doc);
   }
   return out;
 }

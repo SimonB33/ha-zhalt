@@ -119,6 +119,26 @@ void test_discovery_scheduler_switch() {
   TEST_ASSERT_EQUAL_STRING("{\"action\":\"scheduler\",\"on\":false}", d["payload_off"].as<const char*>());
 }
 
+void test_discovery_bridge_device_first() {
+  auto msgs = discoveryMessages("aabbcc", "0.1.0", "10.0.0.30");
+  int firstUnit = -1;
+  for (int i = 0; i < (int)msgs.size(); i++) {
+    JsonDocument d;
+    TEST_ASSERT_FALSE(deserializeJson(d, msgs[i].payload));
+    if (firstUnit < 0 && std::string(d["device"]["name"].as<const char*>()) == "Zhalt Mosquito") firstUnit = i;
+  }
+  TEST_ASSERT_EQUAL(12, firstUnit);
+  for (int i = 0; i < (int)msgs.size(); i++) {
+    JsonDocument d;
+    deserializeJson(d, msgs[i].payload);
+    const char* name = d["device"]["name"].as<const char*>();
+    if (i < firstUnit)
+      TEST_ASSERT_EQUAL_STRING("Zhalt Bridge", name);
+    else
+      TEST_ASSERT_EQUAL_STRING("Zhalt Mosquito", name);
+  }
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_iso_local);
@@ -129,5 +149,6 @@ int main() {
   RUN_TEST(test_discovery_mist_button);
   RUN_TEST(test_discovery_online_sensor_has_no_availability);
   RUN_TEST(test_discovery_scheduler_switch);
+  RUN_TEST(test_discovery_bridge_device_first);
   return UNITY_END();
 }
