@@ -6,11 +6,31 @@
 #include <time.h>
 
 #include "eventlog.h"
+#include "secrets.h"
 
 // Waveshare ESP32-S3-ETH, W5500 on SPI (wiki pinout)
 static constexpr int kEthCs = 14, kEthIrq = 10, kEthRst = 9, kEthSck = 13, kEthMiso = 12, kEthMosi = 11;
 static constexpr const char* kZhaltSsid = "ZHALT-EVO_61B3z";
 static volatile bool s_ethUp = false;
+static volatile int s_lastDiscReason = 0;
+
+static void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
+  if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) s_lastDiscReason = info.wifi_sta_disconnected.reason;
+}
+
+// After a failed join: is the unit's AP visible from here, and how strong?
+static void logZhaltScan() {
+  WiFi.disconnect(false, false);
+  int n = WiFi.scanNetworks(false, true);
+  int best = -1;
+  for (int i = 0; i < n; i++)
+    if (WiFi.SSID(i) == kZhaltSsid && (best < 0 || WiFi.RSSI(i) > WiFi.RSSI(best))) best = i;
+  if (best >= 0)
+    elog::add("scan: %s seen, rssi %d, ch %d (%d networks)", kZhaltSsid, int(WiFi.RSSI(best)), int(WiFi.channel(best)), n);
+  else
+    elog::add("scan: %s NOT seen (%d networks)", kZhaltSsid, n);
+  WiFi.scanDelete();
+}
 
 static void onEvent(arduino_event_id_t event) {
   switch (event) {
@@ -38,11 +58,13 @@ static void onEvent(arduino_event_id_t event) {
 
 void net::begin() {
   Network.onEvent(onEvent);
+  Network.onEvent(onWifiEvent);
   WiFi.persistent(false);
   WiFi.mode(WIFI_OFF);
   ETH.begin(ETH_PHY_W5500, 1, kEthCs, kEthIrq, kEthRst, SPI2_HOST, kEthSck, kEthMiso, kEthMosi);
   ETH.setHostname("zhalt-bridge");
-  configTzTime("<+04>-4", "10.0.0.1", "pool.ntp.org", "time.google.com");
+  // IP literals: DNS can stay pointed at the unit's AP after a join, and 10.0.0.1 serves no NTP.
+  configTzTime("<+04>-4", "162.159.200.1", "216.239.35.0", "pool.ntp.org");
 }
 
 bool net::ethUp() { return s_ethUp; }
@@ -62,19 +84,22 @@ bool net::joinZhalt(uint32_t timeoutMs, int& rssi, uint32_t& joinMs) {
   ETH.setDefault();  // before the STA exists, so it can never take the default route
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(false);
-  WiFi.begin(kZhaltSsid);
+  s_lastDiscReason = 0;
+  WiFi.begin(kZhaltSsid, ZHALT_WIFI_PASS);
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < timeoutMs) delay(100);
   while (WiFi.status() == WL_CONNECTED && WiFi.localIP() == IPAddress(0, 0, 0, 0) && millis() - t0 < timeoutMs)
     delay(50);
   ETH.setDefault();  // keep LAN/MQTT on Ethernet
   if (WiFi.status() != WL_CONNECTED || WiFi.localIP() == IPAddress(0, 0, 0, 0)) {
-    elog::add("zhalt join failed (status %d)", int(WiFi.status()));
+    elog::add("zhalt join failed (status %d, reason %d)", int(WiFi.status()), int(s_lastDiscReason));
+    logZhaltScan();
     leaveZhalt();
     return false;
   }
   rssi = WiFi.RSSI();
   joinMs = millis() - t0;
-  elog::add("zhalt joined in %lu ms, rssi %d, ip %s", (unsigned long)joinMs, rssi, WiFi.localIP().toString().c_str());
+  elog::add("zhalt joined in %lu ms, rssi %d, ip %s, gw %s", (unsigned long)joinMs, rssi, WiFi.localIP().toString().c_str(),
+            WiFi.gatewayIP().toString().c_str());
   return true;
 }
 

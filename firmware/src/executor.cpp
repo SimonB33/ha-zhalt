@@ -90,6 +90,12 @@ static void recordMist(const char* kind) {
 }
 
 static void runConversation(const z::Job& job) {
+  // Every handshake sends our clock to the unit; never send it 1970. Stop is exempt.
+  if (job.type != JobType::Stop && !net::clockValid()) {
+    appSetResult("clock_not_set");
+    elog::add("job %s -> clock_not_set", jobName(job.type));
+    return;
+  }
   z::Conversation conv(goalFor(job.type));
   uint32_t timeoutMs = 30000;
   int secs = 0, minutes = 0;
