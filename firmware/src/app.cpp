@@ -36,6 +36,13 @@ void appInit() {
     app.safety.restore(st);
     elog::add("safety restored: %s", store::get("safety").c_str());
   }
+  if (store::get("inflight") == "1") {
+    app.safety.requestStop(net::now());
+    elog::add("inflight start found after reboot: stop queued");
+    std::string ss = app.safety.serialize();
+    store::put("safety", ss);
+    store::put("inflight", "");
+  }
   app.savedSafety = app.safety.serialize();
   z::Settings s;
   if (z::parseGImp(store::get("imp"), s) && s.valid) app.cachedOriginal = s;

@@ -100,6 +100,7 @@ static void runConversation(const z::Job& job) {
       z::Gate g = app.safety.canStart(net::now(), net::clockValid());
       if (g != z::Gate::Ok) {
         app.snap.lastResult = gateResult(g);
+        store::put("lastres", app.snap.lastResult);
         app.dirty = true;
         elog::add("%s refused: %s", jobName(job.type), gateResult(g));
         return;
@@ -108,16 +109,17 @@ static void runConversation(const z::Job& job) {
     if (job.type == JobType::Mist) {
       secs = app.safety.clampMistSeconds(job.seconds);
       conv.setMistDurationMs(uint32_t(secs) * 1000);
-      timeoutMs = uint32_t(secs) * 1000 + 60000;
+      timeoutMs = uint32_t(secs) * 1000 + 90000;
     }
     if (job.type == JobType::Pulse) {
       minutes = job.resume ? std::max(1, job.minutes) : app.safety.clampPulseMinutes(job.minutes);
-      timeoutMs = 60000;
+      timeoutMs = 90000;
     }
-    if (job.type == JobType::Stop) timeoutMs = 45000;
+    if (job.type == JobType::Stop) timeoutMs = 60000;
     if (job.type == JobType::Scheduler) {
       if (job.on && !app.cachedOriginal.valid) {
         app.snap.lastResult = "no_cached_settings";
+        store::put("lastres", app.snap.lastResult);
         app.dirty = true;
         return;
       }
@@ -127,7 +129,9 @@ static void runConversation(const z::Job& job) {
   if (job.type == JobType::Scheduler) conv.setSchedulerTarget(job.on, job.on ? &cached : nullptr);
 
   bool markedStart = false;
+  bool stopAsked = false;
   auto stopNow = [&]() -> bool {
+    bool r = false;
     if (job.type == JobType::Mist && conv.started() && !markedStart) {
       markedStart = true;
       std::lock_guard<std::mutex> l(app.mu);
@@ -136,15 +140,18 @@ static void runConversation(const z::Job& job) {
       app.dirty = true;
     }
     if (job.type == JobType::Stop) return false;
-    if (app.preempt) return true;
-    if (job.type == JobType::Mist) {
+    if (app.preempt) r = true;
+    if (!r && (job.type == JobType::Mist || job.type == JobType::Pulse)) {
       std::lock_guard<std::mutex> l(app.mu);
-      return app.safety.inBlackout(net::now());
+      r = app.safety.inBlackout(net::now()) || !net::clockValid();
     }
-    return false;
+    if (r) stopAsked = true;
+    return r;
   };
 
   elog::add("job %s start", jobName(job.type));
+  bool tracked = job.type == JobType::Mist || job.type == JobType::Pulse;
+  if (tracked) store::put("inflight", "1");
   session::Outcome o = session::run(conv, timeoutMs, stopNow);
   {
     std::lock_guard<std::mutex> l(app.mu);
@@ -176,12 +183,12 @@ static void runConversation(const z::Job& job) {
       break;
     case JobType::Pulse:
       if (done && conv.started()) {
-        {
+        if (!stopAsked) {
           std::lock_guard<std::mutex> l(app.mu);
           app.safety.onPulseStarted(now, minutes);
         }
         recordMist("pulse");
-        appSetResult("ok");
+        appSetResult(stopAsked ? "cancelled" : "ok");
       } else {
         // The start flag may have landed; the unit may start pulsing late. Make sure it stops.
         if (!done && o.wsConnected) {
@@ -205,6 +212,7 @@ static void runConversation(const z::Job& job) {
     default:
       appSetResult(done ? "ok" : err);
   }
+  if (tracked) store::put("inflight", "");
   elog::add("job %s -> %s", jobName(job.type), done ? "ok" : err.c_str());
 }
 

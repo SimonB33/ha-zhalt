@@ -28,6 +28,7 @@ session::Outcome session::run(z::Conversation& conv, uint32_t timeoutMs, const s
     ws.begin("172.217.28.1", 81, "/");
     uint32_t t0 = millis();
     while (conv.status() == z::Conversation::Status::Running && millis() - t0 < timeoutMs && !o.wsDropped) {
+      if (stopNow && stopNow()) conv.requestStop();
       ws.loop();
       uint32_t t = millis();
       if (!o.wsConnected && t - t0 > kWsConnectTimeoutMs) break;
