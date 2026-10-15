@@ -14,9 +14,17 @@ static volatile bool s_ethUp = false;
 
 static void onEvent(arduino_event_id_t event) {
   switch (event) {
+    case ARDUINO_EVENT_ETH_START:
+      ETH.setDefault();
+      break;
     case ARDUINO_EVENT_ETH_GOT_IP:
+      ETH.setDefault();
       s_ethUp = true;
       elog::add("eth up %s", ETH.localIP().toString().c_str());
+      break;
+    case ARDUINO_EVENT_ETH_LOST_IP:
+      s_ethUp = false;
+      elog::add("eth lost ip");
       break;
     case ARDUINO_EVENT_ETH_DISCONNECTED:
     case ARDUINO_EVENT_ETH_STOP:
@@ -51,6 +59,7 @@ String net::mac() {
 
 bool net::joinZhalt(uint32_t timeoutMs, int& rssi, uint32_t& joinMs) {
   uint32_t t0 = millis();
+  ETH.setDefault();  // before the STA exists, so it can never take the default route
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(false);
   WiFi.begin(kZhaltSsid);

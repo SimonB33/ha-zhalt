@@ -4,6 +4,8 @@
 
 #include <mutex>
 
+#include "eventlog.h"
+
 static Preferences s_prefs;
 static std::mutex s_mu;
 
@@ -18,5 +20,5 @@ std::string store::get(const char* key) {
 void store::put(const char* key, const std::string& value) {
   std::lock_guard<std::mutex> l(s_mu);
   if (s_prefs.isKey(key) && s_prefs.getString(key, "") == value.c_str()) return;  // spare the flash
-  s_prefs.putString(key, value.c_str());
+  if (s_prefs.putString(key, value.c_str()) == 0 && !value.empty()) elog::add("nvs write failed: %s", key);
 }
