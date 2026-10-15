@@ -111,12 +111,79 @@ void test_user_stop_cancels_pulse() {
   TEST_ASSERT_TRUE(s.tick(at(8, 40), true).action == TickAction::None);
 }
 
-void test_clock_invalid_defers_timers_but_not_stops() {
+void test_clock_invalid_with_active_pulse_stops_immediately() {
   Safety s;
   s.onPulseStarted(at(8, 0), 40);
-  TEST_ASSERT_TRUE(s.tick(at(8, 41), false).action == TickAction::None);
+  TEST_ASSERT_TRUE(s.tick(at(8, 41), false).action == TickAction::Stop);
+  s.onStopConfirmed();
+  TEST_ASSERT_FALSE(s.state().pulseActive);
+  TEST_ASSERT_TRUE(s.tick(at(8, 41), true).action == TickAction::None);
+}
+
+void test_clock_invalid_pending_stop_still_fires() {
+  Safety s;
+  s.onPulseStarted(at(8, 0), 40);
   s.requestStop(at(8, 41));
   TEST_ASSERT_TRUE(s.tick(at(8, 41), false).action == TickAction::Stop);
+}
+
+void test_restore_then_no_clock_stops() {
+  Safety before;
+  before.onPulseStarted(at(8, 0), 40);
+  SafetyState st;
+  TEST_ASSERT_TRUE(Safety::deserialize(before.serialize(), st));
+  Safety after;
+  after.restore(st);
+  TEST_ASSERT_TRUE(after.tick(at(8, 10), false).action == TickAction::Stop);
+}
+
+void test_gate_stop_pending() {
+  Safety s;
+  s.requestStop(at(9, 0));
+  TEST_ASSERT_TRUE(s.canStart(at(9, 0), true) == Gate::StopPending);
+}
+
+void test_gate_stop_failed() {
+  Safety s;
+  int64_t t = at(9, 0);
+  s.requestStop(t);
+  for (int i = 0; i < 4; ++i) {
+    TEST_ASSERT_TRUE(s.tick(t, true).action == TickAction::Stop);
+    s.onStopFailed(t);
+    t += 20;
+  }
+  TEST_ASSERT_TRUE(s.state().stopFailed);
+  TEST_ASSERT_TRUE(s.canStart(t, true) == Gate::StopFailed);
+  s.requestStop(t);
+  TEST_ASSERT_TRUE(s.canStart(t, true) == Gate::StopPending);
+}
+
+void test_confirm_clears_pulse_started_during_pending_stop() {
+  Safety s;
+  int64_t t = at(9, 0);
+  s.requestStop(t);
+  s.onPulseStarted(t, 40);
+  s.onStopConfirmed();
+  TEST_ASSERT_FALSE(s.state().pulseActive);
+}
+
+void test_attempts_persist_across_reboot() {
+  Safety s;
+  int64_t t = at(9, 0);
+  s.requestStop(t);
+  for (int i = 0; i < 4; ++i) {
+    TEST_ASSERT_TRUE(s.tick(t, true).action == TickAction::Stop);
+    SafetyState st;
+    TEST_ASSERT_TRUE(Safety::deserialize(s.serialize(), st));
+    Safety next;
+    next.restore(st);
+    s = next;
+  }
+  TEST_ASSERT_EQUAL(4, s.state().stopAttempts);
+  TEST_ASSERT_TRUE(s.tick(t, true).action == TickAction::Stop);
+  s.onStopFailed(t);
+  TEST_ASSERT_TRUE(s.state().stopFailed);
+  TEST_ASSERT_FALSE(s.state().stopPending);
 }
 
 void test_restore_after_reboot_still_stops() {
@@ -160,7 +227,13 @@ int main() {
   RUN_TEST(test_blackout_resume_threshold_zero_always_resumes);
   RUN_TEST(test_stop_retries_then_fails);
   RUN_TEST(test_user_stop_cancels_pulse);
-  RUN_TEST(test_clock_invalid_defers_timers_but_not_stops);
+  RUN_TEST(test_clock_invalid_with_active_pulse_stops_immediately);
+  RUN_TEST(test_clock_invalid_pending_stop_still_fires);
+  RUN_TEST(test_restore_then_no_clock_stops);
+  RUN_TEST(test_gate_stop_pending);
+  RUN_TEST(test_gate_stop_failed);
+  RUN_TEST(test_confirm_clears_pulse_started_during_pending_stop);
+  RUN_TEST(test_attempts_persist_across_reboot);
   RUN_TEST(test_restore_after_reboot_still_stops);
   RUN_TEST(test_restore_with_stop_in_flight_retries);
   RUN_TEST(test_deserialize_rejects_garbage);

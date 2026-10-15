@@ -15,6 +15,8 @@ bool Safety::inBlackout(int64_t now) const {
 
 Gate Safety::canStart(int64_t now, bool clockValid) const {
   if (!clockValid) return Gate::ClockNotSet;
+  if (st_.stopFailed) return Gate::StopFailed;
+  if (st_.stopPending) return Gate::StopPending;
   if (inBlackout(now)) return Gate::Blackout;
   if (st_.pulseActive) return Gate::PulseActive;
   return Gate::Ok;
@@ -61,11 +63,11 @@ void Safety::onStopConfirmed() {
   st_.stopPending = false;
   st_.stopInFlight = false;
   st_.stopAttempts = 0;
+  st_.pulseActive = false;  // a stop that lands always ends the session
 }
 
 void Safety::onStopFailed(int64_t now) {
   st_.stopInFlight = false;
-  st_.stopAttempts++;
   if (st_.stopAttempts > kStopRetries) {
     st_.stopPending = false;
     st_.stopFailed = true;
@@ -77,15 +79,25 @@ void Safety::onStopFailed(int64_t now) {
   }
 }
 
+TickResult Safety::dispatchStop() {
+  st_.stopInFlight = true;
+  st_.stopAttempts++;
+  return {TickAction::Stop, 0};
+}
+
 TickResult Safety::tick(int64_t now, bool clockValid) {
   if (st_.stopPending) {
-    if (!st_.stopInFlight && now >= st_.nextStopAt) {
-      st_.stopInFlight = true;
-      return {TickAction::Stop, 0};
+    if (!st_.stopInFlight && now >= st_.nextStopAt) return dispatchStop();
+    return {};
+  }
+  if (!clockValid) {
+    // Without a clock a session cannot be timed, so fail safe: stop it.
+    if (st_.pulseActive || st_.paused) {
+      requestStop(now);
+      return dispatchStop();
     }
     return {};
   }
-  if (!clockValid) return {};
   if (st_.pulseActive) {
     if (inBlackout(now)) {
       int64_t rem = st_.pulseEndEpoch - now;
@@ -93,14 +105,12 @@ TickResult Safety::tick(int64_t now, bool clockValid) {
       st_.paused = rem > 0;
       st_.pausedRemainingSec = rem > 0 ? rem : 0;
       beginStop(now);
-      st_.stopInFlight = true;
-      return {TickAction::Stop, 0};
+      return dispatchStop();
     }
     if (now >= st_.pulseEndEpoch) {
       st_.pulseActive = false;
       beginStop(now);
-      st_.stopInFlight = true;
-      return {TickAction::Stop, 0};
+      return dispatchStop();
     }
     return {};
   }

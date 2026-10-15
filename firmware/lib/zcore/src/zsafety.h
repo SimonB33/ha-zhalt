@@ -19,11 +19,14 @@ struct SafetyState {
 };
 
 enum class TickAction { None, Stop, ResumePulse };
+// minutes is set for ResumePulse only: the remaining session time, rounded up.
+// Resume minutes must NOT be passed through clampPulseMinutes (a sub-10-minute
+// remainder would be raised to 10).
 struct TickResult {
   TickAction action = TickAction::None;
   int minutes = 0;
 };
-enum class Gate { Ok, ClockNotSet, Blackout, PulseActive };
+enum class Gate { Ok, ClockNotSet, Blackout, PulseActive, StopPending, StopFailed };
 
 class Safety {
  public:
@@ -55,6 +58,7 @@ class Safety {
 
  private:
   void beginStop(int64_t now);
+  TickResult dispatchStop();  // counts one attempt and marks it in flight
 
   Config config_ = defaultConfig();
   SafetyState st_;
