@@ -6,7 +6,7 @@
 #include "zconversation.h"
 
 namespace session {
-constexpr uint32_t kJoinTimeoutMs = 15000;
+constexpr uint32_t kJoinTimeoutMs = 12000;  // per attempt; net::joinZhalt tries 3 times
 constexpr uint32_t kWsConnectTimeoutMs = 8000;
 
 struct Outcome {

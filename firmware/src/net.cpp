@@ -79,7 +79,8 @@ String net::mac() {
   return m;
 }
 
-bool net::joinZhalt(uint32_t timeoutMs, int& rssi, uint32_t& joinMs) {
+// One join attempt; on failure the STA is left off so the next attempt starts clean.
+static bool joinOnce(uint32_t timeoutMs) {
   uint32_t t0 = millis();
   ETH.setDefault();  // before the STA exists, so it can never take the default route
   WiFi.mode(WIFI_STA);
@@ -90,17 +91,35 @@ bool net::joinZhalt(uint32_t timeoutMs, int& rssi, uint32_t& joinMs) {
   while (WiFi.status() == WL_CONNECTED && WiFi.localIP() == IPAddress(0, 0, 0, 0) && millis() - t0 < timeoutMs)
     delay(50);
   ETH.setDefault();  // keep LAN/MQTT on Ethernet
-  if (WiFi.status() != WL_CONNECTED || WiFi.localIP() == IPAddress(0, 0, 0, 0)) {
-    elog::add("zhalt join failed (status %d, reason %d)", int(WiFi.status()), int(s_lastDiscReason));
-    logZhaltScan();
-    leaveZhalt();
-    return false;
+  return WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0);
+}
+
+// The unit's AP is weak from the bridge (-78..-87 dBm), so single attempts sometimes
+// time out at auth (reason 2). Retry a few times; good joins take ~2-4 s.
+// Worst case: kJoinAttempts * timeoutMs + pauses + one scan (~3 s).
+static constexpr int kJoinAttempts = 3;
+static constexpr uint32_t kJoinRetryPauseMs = 2000;
+
+bool net::joinZhalt(uint32_t timeoutMs, int& rssi, uint32_t& joinMs) {
+  uint32_t t0 = millis();
+  for (int attempt = 1; attempt <= kJoinAttempts; attempt++) {
+    if (joinOnce(timeoutMs)) {
+      rssi = WiFi.RSSI();
+      joinMs = millis() - t0;
+      elog::add("zhalt joined in %lu ms (attempt %d), rssi %d, ip %s, gw %s", (unsigned long)joinMs, attempt, rssi,
+                WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str());
+      return true;
+    }
+    elog::add("zhalt join failed (attempt %d/%d, status %d, reason %d)", attempt, kJoinAttempts, int(WiFi.status()),
+              int(s_lastDiscReason));
+    if (attempt < kJoinAttempts) {
+      leaveZhalt();
+      delay(kJoinRetryPauseMs);
+    }
   }
-  rssi = WiFi.RSSI();
-  joinMs = millis() - t0;
-  elog::add("zhalt joined in %lu ms, rssi %d, ip %s, gw %s", (unsigned long)joinMs, rssi, WiFi.localIP().toString().c_str(),
-            WiFi.gatewayIP().toString().c_str());
-  return true;
+  logZhaltScan();
+  leaveZhalt();
+  return false;
 }
 
 void net::leaveZhalt() {
