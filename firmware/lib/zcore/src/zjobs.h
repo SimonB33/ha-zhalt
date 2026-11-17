@@ -15,6 +15,7 @@ struct Job {
   bool on = false;
   uint32_t enqueuedMs = 0;  // millis() at submit; queued starts expire
   bool resume = false;  // pulse restarted after a blackout: minutes are not clamped
+  bool force = false;   // manual mist: blackout windows do not refuse or stop it
 };
 
 // One worker drains this. Stop jumps the queue and cancels queued starts.

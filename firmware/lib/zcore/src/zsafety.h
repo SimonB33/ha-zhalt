@@ -40,7 +40,8 @@ class Safety {
   void setConfig(const Config& c) { config_ = c; }
   const Config& config() const { return config_; }
 
-  Gate canStart(int64_t now, bool clockValid) const;
+  // ignoreBlackout: manual mist (force). Clock and stop gates still apply.
+  Gate canStart(int64_t now, bool clockValid, bool ignoreBlackout = false) const;
   bool inBlackout(int64_t now) const;
   int clampMistSeconds(int requested) const;
   int clampPulseMinutes(int requested) const;

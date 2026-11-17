@@ -103,7 +103,7 @@ static void runConversation(const z::Job& job) {
   {
     std::lock_guard<std::mutex> l(app.mu);
     if (job.type == JobType::Mist || job.type == JobType::Pulse || job.type == JobType::TestPump) {
-      z::Gate g = app.safety.canStart(net::now(), net::clockValid());
+      z::Gate g = app.safety.canStart(net::now(), net::clockValid(), job.type == JobType::Mist && job.force);
       if (g != z::Gate::Ok) {
         app.snap.lastResult = gateResult(g);
         store::put("lastres", app.snap.lastResult);
@@ -152,13 +152,13 @@ static void runConversation(const z::Job& job) {
     if (app.preempt) r = true;
     if (!r && (job.type == JobType::Mist || job.type == JobType::Pulse)) {
       std::lock_guard<std::mutex> l(app.mu);
-      r = app.safety.inBlackout(net::now()) || !net::clockValid();
+      r = (!job.force && app.safety.inBlackout(net::now())) || !net::clockValid();
     }
     if (r) stopAsked = true;
     return r;
   };
 
-  elog::add("job %s start", jobName(job.type));
+  elog::add("job %s start%s", jobName(job.type), job.force ? " (force)" : "");
   bool tracked = job.type == JobType::Mist || job.type == JobType::Pulse;
   if (tracked) store::put("inflight", "1");
   session::Outcome o = session::run(conv, timeoutMs, stopNow);

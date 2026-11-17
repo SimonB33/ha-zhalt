@@ -30,6 +30,14 @@ void test_gate_clock_and_blackout() {
   TEST_ASSERT_TRUE(s.canStart(at(18, 30), true) == Gate::Ok);
 }
 
+void test_gate_ignore_blackout() {
+  Safety s;
+  TEST_ASSERT_TRUE(s.canStart(at(6, 0), true, true) == Gate::Ok);
+  TEST_ASSERT_TRUE(s.canStart(at(6, 0), false, true) == Gate::ClockNotSet);
+  s.requestStop(at(6, 0));
+  TEST_ASSERT_TRUE(s.canStart(at(6, 0), true, true) == Gate::StopPending);
+}
+
 void test_gate_pulse_active() {
   Safety s;
   s.onPulseStarted(at(8, 0), 40);
@@ -220,6 +228,7 @@ int main() {
   UNITY_BEGIN();
   RUN_TEST(test_clamps);
   RUN_TEST(test_gate_clock_and_blackout);
+  RUN_TEST(test_gate_ignore_blackout);
   RUN_TEST(test_gate_pulse_active);
   RUN_TEST(test_pulse_cap_stops_once);
   RUN_TEST(test_blackout_stops_then_resumes);

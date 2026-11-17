@@ -144,6 +144,13 @@ bool parseCommand(const std::string& json, Command& out, std::string& err) {
     err = "seconds must be a number";
     return false;
   }
+  if (c.type == CmdType::Mist && !doc["force"].isNull()) {
+    if (!doc["force"].is<bool>()) {
+      err = "force must be true/false";
+      return false;
+    }
+    c.force = doc["force"].as<bool>();
+  }
   if (c.type == CmdType::Pulse && !doc["minutes"].isNull() && !readInt(doc["minutes"], c.minutes)) {
     err = "minutes must be a number";
     return false;

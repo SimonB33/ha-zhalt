@@ -13,11 +13,11 @@ bool Safety::inBlackout(int64_t now) const {
   return false;
 }
 
-Gate Safety::canStart(int64_t now, bool clockValid) const {
+Gate Safety::canStart(int64_t now, bool clockValid, bool ignoreBlackout) const {
   if (!clockValid) return Gate::ClockNotSet;
   if (st_.stopFailed) return Gate::StopFailed;
   if (st_.stopPending) return Gate::StopPending;
-  if (inBlackout(now)) return Gate::Blackout;
+  if (!ignoreBlackout && inBlackout(now)) return Gate::Blackout;
   if (st_.pulseActive) return Gate::PulseActive;
   return Gate::Ok;
 }

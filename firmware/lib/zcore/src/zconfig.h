@@ -30,6 +30,7 @@ struct Command {
   int seconds = 0;  // mist; 0 = use config
   int minutes = 0;  // pulse; 0 = default
   bool on = false;  // scheduler
+  bool force = false;  // mist: manual run that ignores the blackout windows
 };
 
 bool parseCommand(const std::string& json, Command& out, std::string& err);

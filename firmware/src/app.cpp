@@ -65,7 +65,7 @@ void appSubmit(const z::Command& c) {
       app.dirty = true;
       return;
     case CmdType::Reboot: app.rebootRequested = true; return;
-    case CmdType::Mist: j.type = JobType::Mist; j.seconds = c.seconds; break;
+    case CmdType::Mist: j.type = JobType::Mist; j.seconds = c.seconds; j.force = c.force; break;
     case CmdType::Pulse: j.type = JobType::Pulse; j.minutes = c.minutes; break;
     case CmdType::Refresh: j.type = JobType::Refresh; break;
     case CmdType::Scheduler: j.type = JobType::Scheduler; j.on = c.on; break;
